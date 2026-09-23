@@ -5,10 +5,12 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  const guard = useSubmitGuard();
   const [regno, setRegno] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -16,19 +18,21 @@ export default function LoginPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const member = await login(regno.trim(), password);
-      if (member.mustChangePassword) router.push("/change-password");
-      else if (member.role === "ADMIN" || member.role === "FIN_SEC") router.push("/admin");
-      else router.push("/dashboard");
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) setError("Incorrect regno or password.");
-      else setError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    await guard(async () => {
+      setError(null);
+      setSubmitting(true);
+      try {
+        const member = await login(regno.trim(), password);
+        if (member.mustChangePassword) router.push("/change-password");
+        else if (member.role === "ADMIN" || member.role === "FIN_SEC") router.push("/admin");
+        else router.push("/dashboard");
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) setError("Incorrect regno or password.");
+        else setError("Something went wrong. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   return (

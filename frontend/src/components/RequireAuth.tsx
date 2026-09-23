@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { Header } from "./Header";
+import { Sidebar } from "./Sidebar";
 
 export function RequireAuth({ staffOnly = false, children }: { staffOnly?: boolean; children: React.ReactNode }) {
   const { member, loading } = useAuth();
@@ -26,9 +26,11 @@ export function RequireAuth({ staffOnly = false, children }: { staffOnly?: boole
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[var(--bg)]">
-      <Header />
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">{children}</main>
+    <div className="flex-1 flex bg-[var(--bg)] min-h-0">
+      <Sidebar />
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8 md:px-10">
+        <div className="max-w-5xl mx-auto">{children}</div>
+      </main>
     </div>
   );
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
 import { api, apiUrl, ApiError } from "@/lib/api";
 import { Member } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
+  const guard = useSubmitGuard();
   const [regno, setRegno] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -19,15 +22,17 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setMsg(null);
-    try {
-      const m = await api.post<Member>("/api/admin/members", { regno, fullName, phone, email, deptCode, role });
-      onRegistered(m);
-      setMsg(`Registered. Default password is the reg. number: ${m.regno}`);
-      setRegno(""); setFullName(""); setPhone(""); setEmail(""); setDeptCode(""); setRole("MEMBER");
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not register member.");
-    }
+    await guard(async () => {
+      setError(null); setMsg(null);
+      try {
+        const m = await api.post<Member>("/api/admin/members", { regno, fullName, phone, email, deptCode, role });
+        onRegistered(m);
+        setMsg(`Registered. Default password is the reg. number: ${m.regno}`);
+        setRegno(""); setFullName(""); setPhone(""); setEmail(""); setDeptCode(""); setRole("MEMBER");
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Could not register member.");
+      }
+    });
   }
 
   if (!open) {
@@ -83,6 +88,7 @@ function AdminMembersContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [query, setQuery] = useState("");
   const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   function load() {
     api.get<Member[]>("/api/admin/members").then(setMembers);
@@ -91,9 +97,13 @@ function AdminMembersContent() {
   useEffect(load, []);
 
   async function resetPassword(id: number, regno: string) {
-    await api.post(`/api/admin/members/${id}/reset-password`);
-    setResetMsg(`Password for ${regno} reset to their reg. number.`);
-    setTimeout(() => setResetMsg(null), 5000);
+    setResetError(null); setResetMsg(null);
+    try {
+      await api.post(`/api/admin/members/${id}/reset-password`);
+      setResetMsg(`Password for ${regno} has been reset to their reg. number (${regno}). They'll be asked to set a new one on their next sign-in.`);
+    } catch (e) {
+      setResetError(e instanceof ApiError ? e.message : `Could not reset the password for ${regno}. Please try again.`);
+    }
   }
 
   const filtered = members.filter((m) =>
@@ -107,7 +117,12 @@ function AdminMembersContent() {
         <RegisterForm onRegistered={() => load()} />
       </div>
 
-      {resetMsg && <p className="alert-success max-w-md">{resetMsg}</p>}
+      {resetMsg && (
+        <p className="alert-success max-w-md">
+          {resetMsg} <Link href="/login" className="font-semibold underline">Go to login page</Link>
+        </p>
+      )}
+      {resetError && <p className="alert-error max-w-md">{resetError}</p>}
 
       <input
         placeholder="Search by regno or name..."

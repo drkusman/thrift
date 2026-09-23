@@ -5,8 +5,10 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { api, ApiError } from "@/lib/api";
 import { Loan, LoanType, ScheduleRow } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 function LoansContent() {
+  const guard = useSubmitGuard();
   const [loanTypes, setLoanTypes] = useState<LoanType[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanTypeId, setLoanTypeId] = useState<number | "">("");
@@ -31,23 +33,25 @@ function LoansContent() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    if (!loanTypeId) { setError("Choose a loan type."); return; }
-    setSubmitting(true);
-    try {
-      await api.post("/api/me/loans", {
-        loanTypeId,
-        requestedAmount: Number(amount),
-        reason,
-        durationMonths: duration ? Number(duration) : undefined,
-      });
-      setAmount(""); setReason(""); setDuration(""); setLoanTypeId("");
-      load();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not submit application.");
-    } finally {
-      setSubmitting(false);
-    }
+    await guard(async () => {
+      setError(null);
+      if (!loanTypeId) { setError("Choose a loan type."); return; }
+      setSubmitting(true);
+      try {
+        await api.post("/api/me/loans", {
+          loanTypeId,
+          requestedAmount: Number(amount),
+          reason,
+          durationMonths: duration ? Number(duration) : undefined,
+        });
+        setAmount(""); setReason(""); setDuration(""); setLoanTypeId("");
+        load();
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Could not submit application.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   async function toggleSchedule(loanId: number) {

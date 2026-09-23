@@ -3,10 +3,12 @@
 import { useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { api, ApiError } from "@/lib/api";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 type UploadResult = { batchId: number; totalRows: number; matchedRows: number; totalAmount: number };
 
 function AdminContributionsContent() {
+  const guard = useSubmitGuard();
   const [periodMonth, setPeriodMonth] = useState("");
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -15,20 +17,22 @@ function AdminContributionsContent() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setResult(null);
-    const file = fileRef.current?.files?.[0];
-    if (!file || !periodMonth) { setError("Choose a period month and a file."); return; }
-    setSubmitting(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await api.postForm<UploadResult>(`/api/admin/contributions/upload?periodMonth=${encodeURIComponent(periodMonth)}`, form);
-      setResult(res);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Upload failed.");
-    } finally {
-      setSubmitting(false);
-    }
+    await guard(async () => {
+      setError(null); setResult(null);
+      const file = fileRef.current?.files?.[0];
+      if (!file || !periodMonth) { setError("Choose a period month and a file."); return; }
+      setSubmitting(true);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await api.postForm<UploadResult>(`/api/admin/contributions/upload?periodMonth=${encodeURIComponent(periodMonth)}`, form);
+        setResult(res);
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Upload failed.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   return (

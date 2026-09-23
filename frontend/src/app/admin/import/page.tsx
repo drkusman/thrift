@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { api, ApiError } from "@/lib/api";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 type ImportKind = "banks" | "loan-types" | "members" | "ledger";
 
@@ -14,6 +15,7 @@ const STEPS: { kind: ImportKind; label: string; hint: string }[] = [
 ];
 
 function ImportRow({ kind, label, hint }: { kind: ImportKind; label: string; hint: string }) {
+  const guard = useSubmitGuard();
   const fileRef = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,20 +23,22 @@ function ImportRow({ kind, label, hint }: { kind: ImportKind; label: string; hin
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setResult(null);
-    const file = fileRef.current?.files?.[0];
-    if (!file) { setError("Choose a CSV file."); return; }
-    setSubmitting(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const text = await api.postForm<string>(`/api/admin/import/${kind}`, form);
-      setResult(String(text));
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Import failed.");
-    } finally {
-      setSubmitting(false);
-    }
+    await guard(async () => {
+      setError(null); setResult(null);
+      const file = fileRef.current?.files?.[0];
+      if (!file) { setError("Choose a CSV file."); return; }
+      setSubmitting(true);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const text = await api.postForm<string>(`/api/admin/import/${kind}`, form);
+        setResult(String(text));
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Import failed.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   return (

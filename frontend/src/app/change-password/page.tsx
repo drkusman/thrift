@@ -5,10 +5,12 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 export default function ChangePasswordPage() {
-  const { member, refresh, loading } = useAuth();
+  const { member, refresh, loading, logout } = useAuth();
   const router = useRouter();
+  const guard = useSubmitGuard();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -20,24 +22,31 @@ export default function ChangePasswordPage() {
     return null;
   }
 
+  async function onSwitchAccount() {
+    await logout();
+    router.push("/login");
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    if (newPassword !== confirm) {
-      setError("New password and confirmation do not match.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/api/me/password", { currentPassword, newPassword });
-      await refresh();
-      if (member?.role === "ADMIN" || member?.role === "FIN_SEC") router.push("/admin");
-      else router.push("/dashboard");
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not change password.");
-    } finally {
-      setSubmitting(false);
-    }
+    await guard(async () => {
+      setError(null);
+      if (newPassword !== confirm) {
+        setError("New password and confirmation do not match.");
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await api.post("/api/me/password", { currentPassword, newPassword });
+        await refresh();
+        if (member?.role === "ADMIN" || member?.role === "FIN_SEC") router.push("/admin");
+        else router.push("/dashboard");
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Could not change password.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   }
 
   return (
@@ -91,6 +100,13 @@ export default function ChangePasswordPage() {
         <button type="submit" disabled={submitting} className="btn btn-primary w-full">
           {submitting ? "Saving..." : "Change password"}
         </button>
+
+        <p className="text-center text-sm text-[var(--muted)]">
+          Not you?{" "}
+          <button type="button" onClick={onSwitchAccount} className="font-semibold text-[var(--maroon)] hover:underline">
+            Log out and use a different account
+          </button>
+        </p>
       </form>
     </main>
   );

@@ -6,9 +6,12 @@ import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { Bank, SavingsRequest } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
+import { useSubmitGuard } from "@/lib/use-submit-guard";
 
 function SettingsContent() {
   const { member, refresh } = useAuth();
+  const bankGuard = useSubmitGuard();
+  const savingsGuard = useSubmitGuard();
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankId, setBankId] = useState<number | "">("");
   const [accountNo, setAccountNo] = useState("");
@@ -34,29 +37,33 @@ function SettingsContent() {
 
   async function onSaveBank(e: React.FormEvent) {
     e.preventDefault();
-    setBankError(null); setBankMsg(null);
-    if (!bankId) { setBankError("Choose a bank."); return; }
-    try {
-      await api.post("/api/me/bank-account", { bankId, accountNo });
-      await refresh();
-      setBankMsg("Bank details saved.");
-    } catch (e) {
-      setBankError(e instanceof ApiError ? e.message : "Could not save bank details.");
-    }
+    await bankGuard(async () => {
+      setBankError(null); setBankMsg(null);
+      if (!bankId) { setBankError("Choose a bank."); return; }
+      try {
+        await api.post("/api/me/bank-account", { bankId, accountNo });
+        await refresh();
+        setBankMsg("Bank details saved.");
+      } catch (e) {
+        setBankError(e instanceof ApiError ? e.message : "Could not save bank details.");
+      }
+    });
   }
 
   async function onRequestSavings(e: React.FormEvent) {
     e.preventDefault();
-    setSavingsError(null); setSavingsMsg(null);
-    try {
-      const req = await api.post<SavingsRequest>("/api/me/savings-requests", { amount: Number(amount) });
-      await refresh();
-      setRequests((prev) => [req, ...prev]);
-      setAmount("");
-      setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦70,000 require approval).");
-    } catch (e) {
-      setSavingsError(e instanceof ApiError ? e.message : "Could not submit request.");
-    }
+    await savingsGuard(async () => {
+      setSavingsError(null); setSavingsMsg(null);
+      try {
+        const req = await api.post<SavingsRequest>("/api/me/savings-requests", { amount: Number(amount) });
+        await refresh();
+        setRequests((prev) => [req, ...prev]);
+        setAmount("");
+        setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦70,000 require approval).");
+      } catch (e) {
+        setSavingsError(e instanceof ApiError ? e.message : "Could not submit request.");
+      }
+    });
   }
 
   return (
