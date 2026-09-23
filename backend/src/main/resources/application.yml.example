@@ -1,0 +1,50 @@
+# Copy this file to application.yml (gitignored) and fill in your local values.
+spring:
+  application:
+    name: asuu-moaum-thrift
+  datasource:
+    url: jdbc:postgresql://localhost:5432/thrift
+    username: postgres
+    password: "CHANGE_ME"
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 500
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+server:
+  port: ${PORT:8090}
+  forward-headers-strategy: framework
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+thrift:
+  admin:
+    regno: ${THRIFT_ADMIN_REGNO:ADMIN001}
+    password: ${THRIFT_ADMIN_PASSWORD:admin1234}
+  cors:
+    allowed-origins: ${THRIFT_CORS_ORIGINS:http://localhost:3000}
+  import:
+    dir: ${THRIFT_IMPORT_DIR:classpath:import}
+
+logging:
+  level:
+    org.flywaydb: info
+    org.hibernate.SQL: warn

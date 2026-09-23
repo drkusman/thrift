@@ -1,0 +1,79 @@
+export type Member = {
+  id: number;
+  regno: string;
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  sex: string | null;
+  deptCode: string | null;
+  factCode: string | null;
+  payPoint: string | null;
+  bankId: number | null;
+  accountNo: string | null;
+  status: "ACTIVE" | "WITHDRAWN" | "RETIRED" | "DECEASED" | "INACTIVE";
+  monthlySavingsAmount: number;
+  role: "MEMBER" | "FIN_SEC" | "ADMIN";
+  mustChangePassword: boolean;
+};
+
+export type Bank = { id: number; bankCode: string; name: string; sortCode: string | null };
+
+export type LoanType = {
+  id: number;
+  code: string;
+  name: string;
+  interestRate: number;
+  interestMethod: "AT_SOURCE" | "BUILT_IN";
+  maxDurationMonths: number;
+};
+
+export type Loan = {
+  id: number;
+  loanCode: string | null;
+  memberId: number;
+  loanTypeId: number;
+  requestedAmount: number;
+  reason: string | null;
+  durationMonths: number | null;
+  interestAmount: number | null;
+  disbursedAmount: number | null;
+  totalRepayable: number | null;
+  monthlyRepaymentAmount: number | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "COMPLETED" | "DEFAULTED";
+  appliedAt: string | null;
+  decisionNote: string | null;
+};
+
+export type ScheduleRow = {
+  id: number;
+  loanId: number;
+  installmentNo: number;
+  dueDate: string;
+  amountDue: number;
+  amountPaid: number;
+  status: "PENDING" | "PAID" | "PARTIAL" | "OVERDUE";
+};
+
+export type LedgerEntry = {
+  id: number;
+  transCode: string | null;
+  memberId: number;
+  amount: number;
+  date: string;
+  description: string | null;
+  transType: string | null;
+  transCat: "SAVINGS" | "LOAN" | "INTEREST" | "FEES" | "OTHER";
+  drCrStatus: "DR" | "CR";
+  loanId: number | null;
+  source: string;
+};
+
+export type SavingsRequest = {
+  id: number;
+  memberId: number;
+  requestedAmount: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt: string;
+};
+
+export type Balance = { savingsBalance: number; outstandingLoanBalance: number };

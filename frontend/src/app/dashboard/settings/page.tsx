@@ -1,0 +1,121 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { RequireAuth } from "@/components/RequireAuth";
+import { useAuth } from "@/lib/auth-context";
+import { api, ApiError } from "@/lib/api";
+import { Bank, SavingsRequest } from "@/lib/types";
+import { formatNaira, statusBadgeClass } from "@/lib/ui";
+
+function SettingsContent() {
+  const { member, refresh } = useAuth();
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [bankId, setBankId] = useState<number | "">("");
+  const [accountNo, setAccountNo] = useState("");
+  const [bankMsg, setBankMsg] = useState<string | null>(null);
+  const [bankError, setBankError] = useState<string | null>(null);
+
+  const [amount, setAmount] = useState("");
+  const [savingsError, setSavingsError] = useState<string | null>(null);
+  const [savingsMsg, setSavingsMsg] = useState<string | null>(null);
+  const [requests, setRequests] = useState<SavingsRequest[]>([]);
+
+  useEffect(() => {
+    api.get<Bank[]>("/api/banks").then(setBanks);
+    api.get<SavingsRequest[]>("/api/me/savings-requests").then(setRequests);
+  }, []);
+
+  useEffect(() => {
+    // Prefill the form from the member's currently saved bank details.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (member?.bankId) setBankId(member.bankId);
+    if (member?.accountNo) setAccountNo(member.accountNo);
+  }, [member]);
+
+  async function onSaveBank(e: React.FormEvent) {
+    e.preventDefault();
+    setBankError(null); setBankMsg(null);
+    if (!bankId) { setBankError("Choose a bank."); return; }
+    try {
+      await api.post("/api/me/bank-account", { bankId, accountNo });
+      await refresh();
+      setBankMsg("Bank details saved.");
+    } catch (e) {
+      setBankError(e instanceof ApiError ? e.message : "Could not save bank details.");
+    }
+  }
+
+  async function onRequestSavings(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingsError(null); setSavingsMsg(null);
+    try {
+      const req = await api.post<SavingsRequest>("/api/me/savings-requests", { amount: Number(amount) });
+      await refresh();
+      setRequests((prev) => [req, ...prev]);
+      setAmount("");
+      setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦70,000 require approval).");
+    } catch (e) {
+      setSavingsError(e instanceof ApiError ? e.message : "Could not submit request.");
+    }
+  }
+
+  return (
+    <div className="space-y-8 max-w-lg">
+      <h1 className="text-2xl font-bold text-[var(--maroon-dark)]">Settings</h1>
+
+      <form onSubmit={onSaveBank} className="card p-6 space-y-4">
+        <h2 className="font-semibold text-[var(--ink)]">Bank account</h2>
+        <div>
+          <label className="field-label">Bank</label>
+          <select value={bankId} onChange={(e) => setBankId(e.target.value ? Number(e.target.value) : "")} className="field-input" required>
+            <option value="">Select...</option>
+            {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="field-label">Account number</label>
+          <input value={accountNo} onChange={(e) => setAccountNo(e.target.value)} required className="field-input" />
+        </div>
+        {bankError && <p className="alert-error">{bankError}</p>}
+        {bankMsg && <p className="alert-success">{bankMsg}</p>}
+        <button type="submit" className="btn btn-primary">Save</button>
+      </form>
+
+      <form onSubmit={onRequestSavings} className="card p-6 space-y-4">
+        <h2 className="font-semibold text-[var(--ink)]">Monthly savings amount</h2>
+        <p className="text-sm text-[var(--muted)]">
+          Current: {member ? formatNaira(member.monthlySavingsAmount) : "-"}. Minimum ₦20,000; amounts above ₦70,000 need admin approval.
+        </p>
+        <div>
+          <label className="field-label">New amount</label>
+          <input type="number" min={20000} value={amount} onChange={(e) => setAmount(e.target.value)} required className="field-input" />
+        </div>
+        {savingsError && <p className="alert-error">{savingsError}</p>}
+        {savingsMsg && <p className="alert-success">{savingsMsg}</p>}
+        <button type="submit" className="btn btn-primary">Request change</button>
+
+        {requests.length > 0 && (
+          <div className="pt-3 border-t border-[var(--line)]">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)] mb-2">Past requests</p>
+            <ul className="text-sm space-y-1.5">
+              {requests.map((r) => (
+                <li key={r.id} className="flex justify-between items-center">
+                  <span>{formatNaira(r.requestedAmount)}</span>
+                  <span className={statusBadgeClass(r.status)}>{r.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <RequireAuth>
+      <SettingsContent />
+    </RequireAuth>
+  );
+}

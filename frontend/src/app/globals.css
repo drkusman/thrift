@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+:root {
+  --maroon: #6b1f2e;
+  --maroon-dark: #4c1520;
+  --maroon-light: #f6e9ec;
+  --gold: #d4a017;
+  --gold-dark: #a67d10;
+  --gold-light: #fbf1d9;
+  --ink: #211318;
+  --muted: #75636a;
+  --line: #e7dde1;
+  --bg: #faf7f5;
+  --card: #ffffff;
+  --input-border: #d9cdd2;
+  --shadow: 0 2px 12px rgba(76, 21, 32, .07);
+  --shadow-lg: 0 12px 32px rgba(76, 21, 32, .16);
+  --radius: 14px;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-maroon: var(--maroon);
+  --color-maroon-dark: var(--maroon-dark);
+  --color-maroon-light: var(--maroon-light);
+  --color-gold: var(--gold);
+  --color-gold-dark: var(--gold-dark);
+  --color-gold-light: var(--gold-light);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand-bg: var(--bg);
+  --color-brand-card: var(--card);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@layer components {
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    padding: .6rem 1.15rem;
+    border-radius: 9px;
+    font-weight: 600;
+    font-size: .875rem;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s, opacity .15s;
+    border: 1px solid transparent;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .btn-primary { background: var(--maroon); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--maroon-dark); }
+
+  .btn-gold { background: var(--gold); color: var(--maroon-dark); }
+  .btn-gold:hover:not(:disabled) { background: var(--gold-dark); color: #fff; }
+
+  .btn-secondary { background: var(--card); color: var(--ink); border-color: var(--input-border); }
+  .btn-secondary:hover:not(:disabled) { background: var(--maroon-light); border-color: var(--maroon); }
+
+  .btn-danger { background: #fff; color: #a3161d; border-color: #f0c9cc; }
+  .btn-danger:hover:not(:disabled) { background: #fdecec; }
+
+  .field-label { font-weight: 600; font-size: .82rem; color: var(--ink); margin-bottom: .3rem; display: block; }
+
+  .field-input {
+    width: 100%;
+    padding: .6rem .75rem;
+    border: 1px solid var(--input-border);
+    border-radius: 9px;
+    font-size: .9rem;
+    background: #fff;
+    color: var(--ink);
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--maroon);
+    box-shadow: 0 0 0 3px rgba(107, 31, 46, .12);
+  }
+
+  .stat-tile {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.25rem;
+  }
+  .stat-tile .stat-label { font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .stat-tile .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--maroon-dark); margin-top: .3rem; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: .18rem .6rem;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    background: var(--maroon-light);
+    color: var(--maroon-dark);
+  }
+  .badge-gold { background: var(--gold-light); color: var(--gold-dark); }
+  .badge-grey { background: #f0eced; color: var(--muted); }
+  .badge-green { background: #e6f4ec; color: #0b7a3b; }
+  .badge-red { background: #fdecec; color: #8f1a20; }
+
+  .table-elegant { width: 100%; font-size: .875rem; border-collapse: collapse; }
+  .table-elegant thead th {
+    text-align: left;
+    padding: .7rem .9rem;
+    background: var(--maroon-light);
+    color: var(--maroon-dark);
+    font-size: .7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .table-elegant tbody td { padding: .65rem .9rem; border-top: 1px solid var(--line); }
+  .table-elegant tbody tr:hover td { background: #fbf6f7; }
+
+  .alert-error { background: #fdecec; color: #8f1a20; border: 1px solid #f5c2c5; border-radius: 9px; padding: .6rem .85rem; font-size: .85rem; }
+  .alert-success { background: #e6f4ec; color: #0b5c2c; border: 1px solid #b7dfc6; border-radius: 9px; padding: .6rem .85rem; font-size: .85rem; }
+
+  .brand-crest { height: 40px; width: 40px; object-fit: contain; }
+}
