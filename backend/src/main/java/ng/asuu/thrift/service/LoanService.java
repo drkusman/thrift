@@ -148,6 +148,17 @@ public class LoanService {
         return loanRepository.save(loan);
     }
 
+    /** The member's current monthly repayment obligation, if they have a loan being repaid. */
+    public long activeMonthlyRepayment(Long memberId) {
+        for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
+            if (loan.getStatus() == LoanStatus.DISBURSED || loan.getStatus() == LoanStatus.RUNNING) {
+                Long monthly = loan.getMonthlyRepaymentAmount();
+                return monthly == null ? 0 : monthly;
+            }
+        }
+        return 0;
+    }
+
     /** Outstanding loan balance: sum of DR (disbursement) minus CR (repayments) LOAN-category postings. */
     public long outstandingBalance(Long memberId) {
         long balance = 0;

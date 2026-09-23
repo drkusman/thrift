@@ -14,6 +14,7 @@ export type Member = {
   monthlySavingsAmount: number;
   role: "MEMBER" | "FIN_SEC" | "ADMIN";
   mustChangePassword: boolean;
+  lastSeenAt: string | null;
 };
 
 export type Bank = { id: number; bankCode: string; name: string; sortCode: string | null };
@@ -76,4 +77,11 @@ export type SavingsRequest = {
   requestedAt: string;
 };
 
-export type Balance = { savingsBalance: number; outstandingLoanBalance: number };
+export type Balance = {
+  monthlySavings: number;
+  loanPayments: number;
+  monthlyDeductions: number;
+  totalSavings: number;
+  loanBalance: number;
+  equity: number;
+};

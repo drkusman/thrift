@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import ng.asuu.thrift.security.MemberPrincipal;
+import ng.asuu.thrift.service.MemberService;
 import ng.asuu.thrift.web.dto.LoginRequest;
 import ng.asuu.thrift.web.dto.MemberView;
 import org.springframework.http.ResponseEntity;
@@ -21,9 +22,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthenticationManager authenticationManager;
+    private final MemberService memberService;
 
-    public AuthController(AuthenticationManager authenticationManager) {
+    public AuthController(AuthenticationManager authenticationManager, MemberService memberService) {
         this.authenticationManager = authenticationManager;
+        this.memberService = memberService;
     }
 
     @PostMapping("/login")
@@ -43,7 +46,9 @@ public class AuthController {
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
 
         MemberPrincipal principal = (MemberPrincipal) auth.getPrincipal();
-        return ResponseEntity.ok(MemberView.of(principal.getMember()));
+        var previousLastSeen = principal.getMember().getLastSeenAt();
+        memberService.touchLastSeen(principal.getMember());
+        return ResponseEntity.ok(MemberView.of(principal.getMember(), previousLastSeen));
     }
 
     @GetMapping("/me")

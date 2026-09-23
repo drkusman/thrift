@@ -57,7 +57,15 @@ public class MeController {
     @GetMapping("/balance")
     public BalanceView balance(@AuthenticationPrincipal MemberPrincipal principal) {
         Long id = principal.getMember().getId();
-        return new BalanceView(ledgerService.savingsBalance(id), loanService.outstandingBalance(id));
+        // Re-fetch rather than trust the session-cached principal, since monthlySavingsAmount can
+        // change mid-session (an approved SavingsAmountChangeRequest updates it independently).
+        Member member = memberService.require(id);
+        long totalSavings = ledgerService.savingsBalance(id);
+        long loanBalance = loanService.outstandingBalance(id);
+        long monthlySavings = member.getMonthlySavingsAmount();
+        long loanPayments = loanService.activeMonthlyRepayment(id);
+        return new BalanceView(monthlySavings, loanPayments, monthlySavings + loanPayments,
+                totalSavings, loanBalance, totalSavings - loanBalance);
     }
 
     @GetMapping("/transactions/export.xlsx")
@@ -103,7 +111,8 @@ public class MeController {
         return SavingsRequestDto.of(savingsService.requestChange(principal.getMember(), req.amount()));
     }
 
-    public record BalanceView(long savingsBalance, long outstandingLoanBalance) {}
+    public record BalanceView(long monthlySavings, long loanPayments, long monthlyDeductions,
+                               long totalSavings, long loanBalance, long equity) {}
 
     static ResponseEntity<byte[]> excelResponse(byte[] bytes, String regno) {
         return ResponseEntity.ok()

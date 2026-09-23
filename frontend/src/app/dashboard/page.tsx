@@ -6,9 +6,11 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Balance, LedgerEntry } from "@/lib/types";
+import { formatNaira } from "@/lib/ui";
 
-function formatNaira(n: number) {
-  return "₦" + n.toLocaleString("en-NG");
+function formatLastSeen(iso: string | null) {
+  if (!iso) return "First time signing in";
+  return new Date(iso).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function DashboardContent() {
@@ -27,20 +29,35 @@ function DashboardContent() {
         <p className="text-xs font-bold tracking-[0.15em] uppercase text-[var(--gold)]">Welcome back</p>
         <h1 className="text-2xl font-semibold mt-1">{member?.fullName}</h1>
         <p className="text-sm text-white/75 mt-1">{member?.regno} &middot; {member?.deptCode}</p>
+        <p className="text-xs text-white/60 mt-3">Last seen: {formatLastSeen(member?.lastSeenAt ?? null)}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="stat-tile">
-          <p className="stat-label">Savings balance</p>
-          <p className="stat-value">{balance ? formatNaira(balance.savingsBalance) : "..."}</p>
-        </div>
-        <div className="stat-tile">
-          <p className="stat-label">Outstanding loan</p>
-          <p className="stat-value">{balance ? formatNaira(balance.outstandingLoanBalance) : "..."}</p>
-        </div>
-        <div className="stat-tile">
           <p className="stat-label">Monthly savings</p>
-          <p className="stat-value">{member ? formatNaira(member.monthlySavingsAmount) : "..."}</p>
+          <p className="stat-value">{balance ? formatNaira(balance.monthlySavings) : "..."}</p>
+        </div>
+        <div className="stat-tile">
+          <p className="stat-label">Loan payments</p>
+          <p className="stat-value">{balance ? formatNaira(balance.loanPayments) : "..."}</p>
+        </div>
+        <div className="stat-tile">
+          <p className="stat-label">Monthly deductions</p>
+          <p className="stat-value">{balance ? formatNaira(balance.monthlyDeductions) : "..."}</p>
+        </div>
+        <div className="stat-tile">
+          <p className="stat-label">Total savings</p>
+          <p className="stat-value">{balance ? formatNaira(balance.totalSavings) : "..."}</p>
+        </div>
+        <div className="stat-tile">
+          <p className="stat-label">Loan balance</p>
+          <p className="stat-value">{balance ? formatNaira(balance.loanBalance) : "..."}</p>
+        </div>
+        <div className="stat-tile">
+          <p className="stat-label">Equity</p>
+          <p className={`stat-value ${balance && balance.equity < 0 ? "!text-rose-700" : ""}`}>
+            {balance ? formatNaira(balance.equity) : "..."}
+          </p>
         </div>
       </div>
 

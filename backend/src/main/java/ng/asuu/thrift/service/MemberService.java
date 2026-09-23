@@ -110,7 +110,8 @@ public class MemberService {
     }
 
     @Transactional
-    public void touchLastSeen(Member member) {
+    public void touchLastSeen(Member principalMember) {
+        Member member = require(principalMember.getId());
         member.setLastSeenAt(LocalDateTime.now(ZoneOffset.UTC));
         memberRepository.save(member);
     }
