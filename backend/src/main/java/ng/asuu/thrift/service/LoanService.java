@@ -6,6 +6,7 @@ import ng.asuu.thrift.domain.LedgerEntry.LedgerSource;
 import ng.asuu.thrift.domain.LedgerEntry.TransCat;
 import ng.asuu.thrift.repo.LoanRepaymentScheduleRepository;
 import ng.asuu.thrift.repo.LoanRepository;
+import ng.asuu.thrift.repo.MemberRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,13 +34,15 @@ public class LoanService {
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanTypeService loanTypeService;
     private final LedgerService ledgerService;
+    private final MemberRepository memberRepository;
 
     public LoanService(LoanRepository loanRepository, LoanRepaymentScheduleRepository scheduleRepository,
-                        LoanTypeService loanTypeService, LedgerService ledgerService) {
+                        LoanTypeService loanTypeService, LedgerService ledgerService, MemberRepository memberRepository) {
         this.loanRepository = loanRepository;
         this.scheduleRepository = scheduleRepository;
         this.loanTypeService = loanTypeService;
         this.ledgerService = ledgerService;
+        this.memberRepository = memberRepository;
     }
 
     public Loan require(Long id) {
@@ -60,24 +63,110 @@ public class LoanService {
     }
 
     @Transactional
-    public Loan apply(Member member, Long loanTypeId, long requestedAmount, String reason, Integer durationMonths) {
+    public Loan apply(Member member, Long loanTypeId, long requestedAmount, String reason,
+                       Long guarantorOneId, Long guarantorTwoId) {
         LoanType type = loanTypeService.require(loanTypeId);
         if (requestedAmount <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Requested amount must be positive");
         }
-        int duration = durationMonths == null ? type.getMaxDurationMonths() : durationMonths;
-        if (duration <= 0 || duration > type.getMaxDurationMonths()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Duration must be between 1 and " + type.getMaxDurationMonths() + " months for " + type.getName());
+        if (guarantorOneId == null || guarantorTwoId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Two guarantors are required");
         }
+        if (guarantorOneId.equals(guarantorTwoId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The two guarantors must be different members");
+        }
+        if (guarantorOneId.equals(member.getId()) || guarantorTwoId.equals(member.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot list yourself as a guarantor");
+        }
+        requireActiveMember(guarantorOneId, "First guarantor");
+        requireActiveMember(guarantorTwoId, "Second guarantor");
+
         Loan loan = new Loan();
         loan.setMemberId(member.getId());
         loan.setLoanTypeId(type.getId());
         loan.setRequestedAmount(requestedAmount);
         loan.setReason(reason);
-        loan.setDurationMonths(duration);
+        loan.setDurationMonths(type.getMaxDurationMonths());
+        loan.setGuarantorOneId(guarantorOneId);
+        loan.setGuarantorTwoId(guarantorTwoId);
         loan.setStatus(LoanStatus.PENDING);
         return loanRepository.save(loan);
+    }
+
+    /** Pending loans where the given member is named as either guarantor - their "guarantee requests". */
+    public List<Loan> guaranteeRequestsFor(Long memberId) {
+        List<Loan> result = new ArrayList<>();
+        for (Loan loan : loanRepository.findByStatusOrderByAppliedAtAsc(LoanStatus.PENDING)) {
+            if (memberId.equals(loan.getGuarantorOneId()) || memberId.equals(loan.getGuarantorTwoId())) {
+                result.add(loan);
+            }
+        }
+        return result;
+    }
+
+    @Transactional
+    public Loan respondToGuarantee(Member guarantor, Long loanId, boolean accept) {
+        Loan loan = require(loanId);
+        if (loan.getStatus() != LoanStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This loan is no longer awaiting a decision");
+        }
+        GuaranteeStatus newStatus = accept ? GuaranteeStatus.ACCEPTED : GuaranteeStatus.REJECTED;
+        if (guarantor.getId().equals(loan.getGuarantorOneId())) {
+            loan.setGuarantorOneStatus(newStatus);
+        } else if (guarantor.getId().equals(loan.getGuarantorTwoId())) {
+            loan.setGuarantorTwoStatus(newStatus);
+        } else {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a guarantor on this loan");
+        }
+        return loanRepository.save(loan);
+    }
+
+    /** Lets an applicant swap out a guarantor who hasn't accepted yet - still PENDING, or has REJECTED -
+     *  for someone else. A guarantor who already ACCEPTED can't be swapped out from under them. */
+    @Transactional
+    public Loan changeGuarantor(Member applicant, Long loanId, int slot, Long newGuarantorId) {
+        Loan loan = require(loanId);
+        if (!loan.getMemberId().equals(applicant.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This is not your loan application");
+        }
+        if (loan.getStatus() != LoanStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This loan is no longer awaiting a decision");
+        }
+        if (slot != 1 && slot != 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid guarantor slot");
+        }
+        GuaranteeStatus currentStatus = slot == 1 ? loan.getGuarantorOneStatus() : loan.getGuarantorTwoStatus();
+        if (currentStatus == GuaranteeStatus.ACCEPTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This guarantor already accepted and cannot be changed");
+        }
+        if (newGuarantorId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A new guarantor is required");
+        }
+        if (newGuarantorId.equals(applicant.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot list yourself as a guarantor");
+        }
+        Long otherGuarantorId = slot == 1 ? loan.getGuarantorTwoId() : loan.getGuarantorOneId();
+        if (newGuarantorId.equals(otherGuarantorId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The two guarantors must be different members");
+        }
+        requireActiveMember(newGuarantorId, "New guarantor");
+
+        if (slot == 1) {
+            loan.setGuarantorOneId(newGuarantorId);
+            loan.setGuarantorOneStatus(GuaranteeStatus.PENDING);
+        } else {
+            loan.setGuarantorTwoId(newGuarantorId);
+            loan.setGuarantorTwoStatus(GuaranteeStatus.PENDING);
+        }
+        return loanRepository.save(loan);
+    }
+
+    private void requireActiveMember(Long memberId, String label) {
+        Member guarantor = memberRepository.findById(memberId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " is not a valid member"));
+        if (!guarantor.isActive()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " must be an active member");
+        }
     }
 
     @Transactional
@@ -85,6 +174,10 @@ public class LoanService {
         Loan loan = require(loanId);
         if (loan.getStatus() != LoanStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a pending loan can be approved");
+        }
+        if (!loan.bothGuarantorsAccepted()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Both guarantors must accept before this loan can be approved");
         }
         LoanType type = loanTypeService.require(loan.getLoanTypeId());
         long requested = loan.getRequestedAmount();
@@ -128,7 +221,10 @@ public class LoanService {
         }
         scheduleRepository.saveAll(schedule);
 
-        ledgerService.post(loan.getMemberId(), disbursed, LocalDate.now(),
+        // Booked as the full repayable amount, not the net cash paid out - the member's monthly
+        // repayments add up to totalRepayable, so the loan balance must start there too, or an
+        // AT_SOURCE loan (interest deducted up front) would drift negative before the term ends.
+        ledgerService.post(loan.getMemberId(), totalRepayable, LocalDate.now(),
                 "Loan disbursement - " + type.getName() + " (" + loan.getLoanCode() + ")",
                 type.getCode(), TransCat.LOAN, DrCr.DR, loan.getId(), LedgerSource.LOAN_DISBURSEMENT, admin.getId());
 
@@ -148,15 +244,18 @@ public class LoanService {
         return loanRepository.save(loan);
     }
 
-    /** The member's current monthly repayment obligation, if they have a loan being repaid. */
+    /** The member's total monthly repayment obligation, summed across every loan currently being
+     *  repaid - a member can have more than one running loan at once (e.g. a legacy loan still
+     *  RUNNING alongside a newly disbursed one), and each contributes to the deduction. */
     public long activeMonthlyRepayment(Long memberId) {
+        long total = 0;
         for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
             if (loan.getStatus() == LoanStatus.DISBURSED || loan.getStatus() == LoanStatus.RUNNING) {
                 Long monthly = loan.getMonthlyRepaymentAmount();
-                return monthly == null ? 0 : monthly;
+                total += monthly == null ? 0 : monthly;
             }
         }
-        return 0;
+        return total;
     }
 
     /** Outstanding loan balance: sum of DR (disbursement) minus CR (repayments) LOAN-category postings. */

@@ -32,6 +32,18 @@ public class Loan {
     @Column(name = "decided_at") private LocalDateTime decidedAt;
     @Column(name = "decision_note") private String decisionNote;
     @Column(name = "disbursed_at") private LocalDateTime disbursedAt;
+    /** Two other active members guaranteeing the applicant. Required for new applications (enforced in
+     *  LoanService.apply(), not at the column level) but left nullable so historical/legacy loans that
+     *  predate this requirement don't break. Each must ACCEPT before the loan can be approved - see
+     *  LoanService.approve()/respondToGuarantee(). An applicant may swap out a guarantor who is still
+     *  PENDING or has REJECTED (not one who already ACCEPTED) via LoanService.changeGuarantor(). */
+    @Column(name = "guarantor_one_id") private Long guarantorOneId;
+    @Column(name = "guarantor_two_id") private Long guarantorTwoId;
+    @Enumerated(EnumType.STRING) @Column(name = "guarantor_one_status", nullable = false) private GuaranteeStatus guarantorOneStatus = GuaranteeStatus.PENDING;
+    @Enumerated(EnumType.STRING) @Column(name = "guarantor_two_status", nullable = false) private GuaranteeStatus guarantorTwoStatus = GuaranteeStatus.PENDING;
 
     public boolean isLegacy() { return loanCode != null && loanCode.startsWith("LEGACY-"); }
+    public boolean bothGuarantorsAccepted() {
+        return guarantorOneStatus == GuaranteeStatus.ACCEPTED && guarantorTwoStatus == GuaranteeStatus.ACCEPTED;
+    }
 }

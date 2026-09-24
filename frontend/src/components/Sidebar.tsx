@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   IconDashboard, IconLoan, IconTransactions, IconSettings, IconMembers,
-  IconSavings, IconUpload, IconImport, IconLogout, IconChevronLeft, IconChevronRight,
+  IconSavings, IconUpload, IconImport, IconLogout, IconChevronLeft, IconChevronRight, IconGuarantee,
 } from "./icons";
 
 const STORAGE_KEY = "thrift-sidebar-collapsed";
@@ -15,6 +15,7 @@ const STORAGE_KEY = "thrift-sidebar-collapsed";
 const MEMBER_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: IconDashboard, exact: true },
   { href: "/dashboard/loans", label: "Loans", icon: IconLoan },
+  { href: "/dashboard/guarantees", label: "Guarantee requests", icon: IconGuarantee },
   { href: "/dashboard/transactions", label: "Transactions", icon: IconTransactions },
   { href: "/dashboard/settings", label: "Settings", icon: IconSettings },
 ];
@@ -53,8 +54,12 @@ export function Sidebar() {
   }
 
   if (!member) return null;
+  // Admins and Fin. Secretaries are members of the thrift too - they get their own savings/loans
+  // dashboard on top of the admin tools, not instead of it.
   const isStaff = member.role === "ADMIN" || member.role === "FIN_SEC";
-  const links = isStaff ? STAFF_LINKS : MEMBER_LINKS;
+  const groups = isStaff
+    ? [{ label: "My account", links: MEMBER_LINKS }, { label: "Administration", links: STAFF_LINKS }]
+    : [{ label: null, links: MEMBER_LINKS }];
 
   async function onLogout() {
     await logout();
@@ -86,28 +91,37 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
-        {links.map((link) => {
-          const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
-          const Icon = link.icon;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              title={collapsed ? link.label : undefined}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                collapsed ? "justify-center px-0" : ""
-              } ${
-                active
-                  ? "bg-[var(--maroon-light)] text-[var(--maroon-dark)]"
-                  : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--maroon-light)]/60"
-              }`}
-            >
-              <Icon className="w-5 h-5 shrink-0" />
-              {!collapsed && <span className="truncate">{link.label}</span>}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 py-3 px-2 space-y-4 overflow-y-auto">
+        {groups.map((group) => (
+          <div key={group.label ?? "main"} className="space-y-1">
+            {group.label && !collapsed && (
+              <p className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--muted)]/70">
+                {group.label}
+              </p>
+            )}
+            {group.links.map((link) => {
+              const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
+              const Icon = link.icon;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  title={collapsed ? link.label : undefined}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    collapsed ? "justify-center px-0" : ""
+                  } ${
+                    active
+                      ? "bg-[var(--maroon-light)] text-[var(--maroon-dark)]"
+                      : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--maroon-light)]/60"
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  {!collapsed && <span className="truncate">{link.label}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="border-t border-[var(--line)] p-2 space-y-1">

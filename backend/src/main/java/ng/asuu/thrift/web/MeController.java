@@ -89,7 +89,14 @@ public class MeController {
 
     @PostMapping("/loans")
     public LoanDto applyForLoan(@AuthenticationPrincipal MemberPrincipal principal, @Valid @RequestBody LoanApplicationRequest req) {
-        return LoanDto.of(loanService.apply(principal.getMember(), req.loanTypeId(), req.requestedAmount(), req.reason(), req.durationMonths()));
+        return LoanDto.of(loanService.apply(principal.getMember(), req.loanTypeId(), req.requestedAmount(), req.reason(),
+                req.guarantorOneId(), req.guarantorTwoId()));
+    }
+
+    @PostMapping("/loans/{loanId}/change-guarantor")
+    public LoanDto changeGuarantor(@AuthenticationPrincipal MemberPrincipal principal, @PathVariable Long loanId,
+                                    @Valid @RequestBody ChangeGuarantorRequest req) {
+        return LoanDto.of(loanService.changeGuarantor(principal.getMember(), loanId, req.slot(), req.newGuarantorId()));
     }
 
     @GetMapping("/loans/{loanId}/schedule")

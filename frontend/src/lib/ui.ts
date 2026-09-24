@@ -10,6 +10,7 @@ export function statusBadgeClass(status: string) {
     case "RUNNING":
     case "COMPLETED":
     case "ACTIVE":
+    case "ACCEPTED":
       return "badge badge-green";
     case "REJECTED":
     case "DEFAULTED":
@@ -18,6 +19,8 @@ export function statusBadgeClass(status: string) {
       return "badge badge-red";
     case "PENDING":
       return "badge badge-gold";
+    case "PULSED":
+      return "badge"; // base maroon styling - a distinct fourth color from gold/green/red/grey
     default:
       return "badge badge-grey";
   }
