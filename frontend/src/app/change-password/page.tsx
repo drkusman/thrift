@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function ChangePasswordPage() {
   const { member, refresh, loading, logout } = useAuth();
@@ -64,35 +65,15 @@ export default function ChangePasswordPage() {
 
         <div>
           <label className="field-label">Current password</label>
-          <input
-            type="password"
-            className="field-input"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-          />
+          <PasswordInput value={currentPassword} onChange={setCurrentPassword} required />
         </div>
         <div>
           <label className="field-label">New password</label>
-          <input
-            type="password"
-            className="field-input"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            minLength={6}
-            required
-          />
+          <PasswordInput value={newPassword} onChange={setNewPassword} minLength={6} required autoComplete="new-password" />
         </div>
         <div>
           <label className="field-label">Confirm new password</label>
-          <input
-            type="password"
-            className="field-input"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            minLength={6}
-            required
-          />
+          <PasswordInput value={confirm} onChange={setConfirm} minLength={6} required autoComplete="new-password" />
         </div>
 
         {error && <p className="alert-error">{error}</p>}

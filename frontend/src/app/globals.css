@@ -91,6 +91,42 @@ body {
     box-shadow: 0 0 0 3px rgba(107, 31, 46, .12);
   }
 
+  .pw-field { position: relative; }
+  .pw-field .field-input { padding-right: 2.6rem; }
+  .pw-toggle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 2.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .pw-toggle:hover { color: var(--maroon); }
+
+  .ss-wrap { position: relative; }
+  .ss-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    margin-top: 4px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  .ss-option { padding: .5rem .75rem; font-size: .875rem; cursor: pointer; }
+  .ss-option:hover { background: var(--maroon-light); }
+
   .stat-tile {
     background: var(--card);
     border: 1px solid var(--line);
@@ -99,7 +135,7 @@ body {
     padding: 1.1rem 1.25rem;
   }
   .stat-tile .stat-label { font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-  .stat-tile .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--maroon-dark); margin-top: .3rem; }
+  .stat-tile .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--maroon-dark); margin-top: .3rem; white-space: nowrap; }
 
   .badge {
     display: inline-flex;

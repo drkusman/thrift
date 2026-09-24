@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -72,13 +73,7 @@ export default function LoginPage() {
 
           <div>
             <label className="field-label">Password</label>
-            <input
-              type="password"
-              className="field-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <PasswordInput value={password} onChange={setPassword} required />
             <p className="text-xs text-[var(--muted)] mt-1.5">First time? Your password is your reg. number.</p>
           </div>
 
