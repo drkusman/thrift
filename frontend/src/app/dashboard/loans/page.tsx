@@ -5,7 +5,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { Loan, LoanType, MemberOption, ScheduleRow } from "@/lib/types";
-import { formatNaira, statusBadgeClass } from "@/lib/ui";
+import { formatNaira, statusBadgeClass, loanTypeAmountRangeLabel } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 import { MemberSearchSelect } from "@/components/MemberSearchSelect";
 
@@ -95,6 +95,10 @@ function LoansContent() {
 
   const selectedType = loanTypes.find((t) => t.id === loanTypeId);
 
+  function activeCountFor(typeId: number) {
+    return loans.filter((l) => l.loanTypeId === typeId && (l.status === "RUNNING" || l.status === "PULSED")).length;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     await guard(async () => {
@@ -102,6 +106,19 @@ function LoansContent() {
       if (!loanTypeId) { setError("Choose a loan type."); return; }
       if (!guarantorOneId || !guarantorTwoId) { setError("Both guarantors are required."); return; }
       if (guarantorOneId === guarantorTwoId) { setError("The two guarantors must be different members."); return; }
+      if (selectedType) {
+        const amt = Number(amount);
+        if (selectedType.minAmount !== null && amt < selectedType.minAmount) {
+          setError(`${selectedType.name} requires at least ${formatNaira(selectedType.minAmount)}.`); return;
+        }
+        if (selectedType.maxAmount !== null && amt > selectedType.maxAmount) {
+          setError(`${selectedType.name} cannot exceed ${formatNaira(selectedType.maxAmount)}.`); return;
+        }
+        if (selectedType.maxConcurrentActive !== null && activeCountFor(selectedType.id) >= selectedType.maxConcurrentActive) {
+          setError(`You already have ${activeCountFor(selectedType.id)} ${selectedType.name}(s) running - complete at least one before applying for another.`);
+          return;
+        }
+      }
       setSubmitting(true);
       try {
         await api.post("/api/me/loans", {
@@ -149,17 +166,38 @@ function LoansContent() {
             required
           >
             <option value="">Select...</option>
-            {loanTypes.map((t) => (
-              <option key={t.id} value={t.id}>{t.name} ({t.interestRate}% {t.interestMethod === "AT_SOURCE" ? "at source" : "built in"}, max {t.maxDurationMonths} months)</option>
-            ))}
+            {loanTypes.map((t) => {
+              const range = loanTypeAmountRangeLabel(t);
+              return (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.interestRate}% {t.interestMethod === "AT_SOURCE" ? "at source" : "built in"}, max {t.maxDurationMonths} months{range ? `, ${range}` : ""})
+                </option>
+              );
+            })}
           </select>
           {selectedType && (
             <p className="text-xs text-[var(--muted)] mt-1.5">Repayment term is fixed at {selectedType.maxDurationMonths} months for this loan type.</p>
           )}
+          {selectedType && selectedType.maxConcurrentActive !== null && activeCountFor(selectedType.id) >= selectedType.maxConcurrentActive && (
+            <p className="text-xs text-[var(--maroon-dark)] font-medium mt-1">
+              You already have {activeCountFor(selectedType.id)} {selectedType.name}(s) running - complete at least one before applying for another.
+            </p>
+          )}
         </div>
         <div>
           <label className="field-label">Amount requested</label>
-          <input type="number" min={1} required value={amount} onChange={(e) => setAmount(e.target.value)} className="field-input" />
+          <input
+            type="number"
+            min={selectedType?.minAmount ?? 10000}
+            max={selectedType?.maxAmount ?? undefined}
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="field-input"
+          />
+          <p className="text-xs text-[var(--muted)] mt-1.5">
+            {selectedType ? (loanTypeAmountRangeLabel(selectedType) ?? `Minimum ${formatNaira(10000)}.`) : `Minimum ${formatNaira(10000)}.`}
+          </p>
         </div>
         <div>
           <label className="field-label">First guarantor</label>

@@ -28,6 +28,9 @@ export type LoanType = {
   interestRate: number;
   interestMethod: "AT_SOURCE" | "BUILT_IN";
   maxDurationMonths: number;
+  minAmount: number | null;
+  maxAmount: number | null;
+  maxConcurrentActive: number | null;
 };
 
 export type Loan = {

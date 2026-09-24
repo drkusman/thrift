@@ -30,6 +30,8 @@ import java.util.UUID;
  */
 @Service
 public class LoanService {
+    private static final long MIN_LOAN_AMOUNT = 10_000;
+
     private final LoanRepository loanRepository;
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanTypeService loanTypeService;
@@ -65,9 +67,45 @@ public class LoanService {
     @Transactional
     public Loan apply(Member member, Long loanTypeId, long requestedAmount, String reason,
                        Long guarantorOneId, Long guarantorTwoId) {
+        return createApplication(member, loanTypeId, requestedAmount, reason, guarantorOneId, guarantorTwoId,
+                GuaranteeStatus.PENDING);
+    }
+
+    /** For a member who applied offline (a paper form) with both guarantors' signatures already on it -
+     *  admin keys in the application and both guarantors go straight to ACCEPTED, since their approval
+     *  was already collected on paper rather than needing to be re-confirmed digitally. */
+    @Transactional
+    public Loan applyOnBehalf(Member member, Long loanTypeId, long requestedAmount, String reason,
+                               Long guarantorOneId, Long guarantorTwoId) {
+        return createApplication(member, loanTypeId, requestedAmount, reason, guarantorOneId, guarantorTwoId,
+                GuaranteeStatus.ACCEPTED);
+    }
+
+    private Loan createApplication(Member member, Long loanTypeId, long requestedAmount, String reason,
+                                    Long guarantorOneId, Long guarantorTwoId, GuaranteeStatus initialGuarantorStatus) {
         LoanType type = loanTypeService.require(loanTypeId);
-        if (requestedAmount <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Requested amount must be positive");
+        if (requestedAmount < MIN_LOAN_AMOUNT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Requested amount must be at least " + MIN_LOAN_AMOUNT);
+        }
+        if (type.getMinAmount() != null && requestedAmount < type.getMinAmount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    type.getName() + " requires at least " + type.getMinAmount());
+        }
+        if (type.getMaxAmount() != null && requestedAmount > type.getMaxAmount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    type.getName() + " cannot exceed " + type.getMaxAmount());
+        }
+        if (type.getMaxConcurrentActive() != null) {
+            long activeOfThisType = loanRepository.findByMemberIdOrderByAppliedAtDesc(member.getId()).stream()
+                    .filter(l -> type.getId().equals(l.getLoanTypeId()))
+                    .filter(l -> l.getStatus() == LoanStatus.RUNNING || l.getStatus() == LoanStatus.PULSED)
+                    .count();
+            if (activeOfThisType >= type.getMaxConcurrentActive()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "You already have " + activeOfThisType + " " + type.getName() + "(s) running - " +
+                                "complete at least one before applying for another");
+            }
         }
         if (guarantorOneId == null || guarantorTwoId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Two guarantors are required");
@@ -89,6 +127,8 @@ public class LoanService {
         loan.setDurationMonths(type.getMaxDurationMonths());
         loan.setGuarantorOneId(guarantorOneId);
         loan.setGuarantorTwoId(guarantorTwoId);
+        loan.setGuarantorOneStatus(initialGuarantorStatus);
+        loan.setGuarantorTwoStatus(initialGuarantorStatus);
         loan.setStatus(LoanStatus.PENDING);
         return loanRepository.save(loan);
     }

@@ -3,6 +3,13 @@ export function formatNaira(n: number | null | undefined) {
   return "₦" + n.toLocaleString("en-NG");
 }
 
+export function loanTypeAmountRangeLabel(t: { minAmount: number | null; maxAmount: number | null }) {
+  if (t.minAmount !== null && t.maxAmount !== null) return `${formatNaira(t.minAmount)}–${formatNaira(t.maxAmount)}`;
+  if (t.minAmount !== null) return `${formatNaira(t.minAmount)} and above`;
+  if (t.maxAmount !== null) return `up to ${formatNaira(t.maxAmount)}`;
+  return null;
+}
+
 export function statusBadgeClass(status: string) {
   switch (status) {
     case "APPROVED":
