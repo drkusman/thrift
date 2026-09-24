@@ -1,3 +1,5 @@
+export type MemberOption = { id: number; regno: string; fullName: string };
+
 export type Member = {
   id: number;
   regno: string;
@@ -40,9 +42,27 @@ export type Loan = {
   disbursedAmount: number | null;
   totalRepayable: number | null;
   monthlyRepaymentAmount: number | null;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "COMPLETED" | "DEFAULTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "PULSED" | "COMPLETED" | "DEFAULTED";
   appliedAt: string | null;
   decisionNote: string | null;
+  guarantorOneId: number | null;
+  guarantorTwoId: number | null;
+  guarantorOneStatus: "PENDING" | "ACCEPTED" | "REJECTED";
+  guarantorTwoStatus: "PENDING" | "ACCEPTED" | "REJECTED";
+};
+
+export type GuaranteeRequest = {
+  loanId: number;
+  loanCode: string | null;
+  applicantMemberId: number;
+  applicantName: string;
+  applicantRegno: string;
+  requestedAmount: number;
+  reason: string | null;
+  appliedAt: string | null;
+  mySlot: 1 | 2;
+  myStatus: "PENDING" | "ACCEPTED" | "REJECTED";
+  otherGuarantorStatus: "PENDING" | "ACCEPTED" | "REJECTED";
 };
 
 export type ScheduleRow = {
@@ -76,6 +96,21 @@ export type SavingsRequest = {
   status: "PENDING" | "APPROVED" | "REJECTED";
   requestedAt: string;
 };
+
+export type AdminSummary = {
+  totalMonthlySavings: number;
+  totalLoanPayments: number;
+  totalMonthlyDeductions: number;
+  totalSavings: number;
+  totalLoanBalance: number;
+  totalEquity: number;
+};
+
+export type MonthPoint = { month: string; amount: number };
+export type FiscalYearTrend = { label: string; points: MonthPoint[] };
+
+export type TypeAmount = { type: string; amount: number };
+export type FiscalYearBreakdown = { label: string; slices: TypeAmount[] };
 
 export type Balance = {
   monthlySavings: number;
