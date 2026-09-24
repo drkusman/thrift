@@ -208,6 +208,7 @@ function LoansContent() {
                   <p className="text-xs text-[var(--muted)] mt-0.5">{l.loanCode ?? "Pending approval"} &middot; applied {l.appliedAt?.slice(0, 10)}</p>
                 </div>
                 <div className="text-right text-sm">
+                  {l.balance !== null && <p className="font-semibold text-[var(--ink)]">Balance: {formatNaira(l.balance)}</p>}
                   <p className="text-[var(--muted)]">Monthly: {formatNaira(l.monthlyRepaymentAmount)}</p>
                   {(l.status === "DISBURSED" || l.status === "RUNNING" || l.status === "PULSED" || l.status === "COMPLETED") && (
                     <button onClick={() => toggleSchedule(l.id)} className="text-[var(--maroon)] hover:underline text-xs font-medium">

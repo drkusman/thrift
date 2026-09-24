@@ -42,6 +42,7 @@ export type Loan = {
   disbursedAmount: number | null;
   totalRepayable: number | null;
   monthlyRepaymentAmount: number | null;
+  balance: number | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "PULSED" | "COMPLETED" | "DEFAULTED";
   appliedAt: string | null;
   decisionNote: string | null;

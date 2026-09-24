@@ -122,7 +122,7 @@ public class MonthlyContributionService {
 
     private void applyToSchedule(Long memberId, long amountPaid) {
         for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
-            if (loan.getStatus() != LoanStatus.DISBURSED && loan.getStatus() != LoanStatus.RUNNING) continue;
+            if (loan.getStatus() != LoanStatus.RUNNING) continue;
             var next = scheduleRepository.findFirstByLoanIdAndStatusNotOrderByInstallmentNoAsc(loan.getId(), ScheduleStatus.PAID);
             if (next.isEmpty()) continue;
             LoanRepaymentSchedule installment = next.get();
@@ -132,10 +132,6 @@ public class MonthlyContributionService {
             installment.setPaidAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
             scheduleRepository.save(installment);
 
-            if (loan.getStatus() == LoanStatus.DISBURSED) {
-                loan.setStatus(LoanStatus.RUNNING);
-                loanRepository.save(loan);
-            }
             boolean allPaid = scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loan.getId())
                     .stream().allMatch(s -> s.getStatus() == ScheduleStatus.PAID);
             if (allPaid) {

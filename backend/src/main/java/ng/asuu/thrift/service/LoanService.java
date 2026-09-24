@@ -198,7 +198,9 @@ public class LoanService {
         loan.setDisbursedAmount(disbursed);
         loan.setTotalRepayable(totalRepayable);
         loan.setMonthlyRepaymentAmount(monthly);
-        loan.setStatus(LoanStatus.DISBURSED);
+        // Goes straight to RUNNING (not a separate DISBURSED-but-not-yet-running state) so a freshly
+        // approved loan reads the same way as an imported legacy one, which never has that distinction.
+        loan.setStatus(LoanStatus.RUNNING);
         loan.setDecidedBy(admin.getId());
         loan.setDecidedAt(LocalDateTime.now(ZoneOffset.UTC));
         loan.setDecisionNote(note);
@@ -262,6 +264,17 @@ public class LoanService {
     public long outstandingBalance(Long memberId) {
         long balance = 0;
         for (var e : ledgerService.history(memberId)) {
+            if (e.getTransCat() != TransCat.LOAN) continue;
+            balance += e.getDrCrStatus() == DrCr.DR ? e.getAmount() : -e.getAmount();
+        }
+        return balance;
+    }
+
+    /** A single loan's own outstanding balance, same DR-minus-CR logic as outstandingBalance() but
+     *  scoped to just this loan's ledger entries rather than everything the member owes. */
+    public long balanceFor(Long loanId) {
+        long balance = 0;
+        for (var e : ledgerService.forLoan(loanId)) {
             if (e.getTransCat() != TransCat.LOAN) continue;
             balance += e.getDrCrStatus() == DrCr.DR ? e.getAmount() : -e.getAmount();
         }

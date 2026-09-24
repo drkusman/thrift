@@ -84,7 +84,9 @@ public class MeController {
 
     @GetMapping("/loans")
     public List<LoanDto> loans(@AuthenticationPrincipal MemberPrincipal principal) {
-        return loanService.forMember(principal.getMember().getId()).stream().map(LoanDto::of).toList();
+        return loanService.forMember(principal.getMember().getId()).stream()
+                .map(loan -> LoanDto.of(loan, loan.getTotalRepayable() == null ? null : loanService.balanceFor(loan.getId())))
+                .toList();
     }
 
     @PostMapping("/loans")
