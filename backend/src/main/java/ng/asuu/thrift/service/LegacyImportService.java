@@ -6,27 +6,32 @@ import ng.asuu.thrift.domain.LedgerEntry.LedgerSource;
 import ng.asuu.thrift.domain.LedgerEntry.TransCat;
 import ng.asuu.thrift.repo.BankRepository;
 import ng.asuu.thrift.repo.LedgerEntryRepository;
+import ng.asuu.thrift.repo.LoanRepository;
 import ng.asuu.thrift.repo.LoanTypeRepository;
 import ng.asuu.thrift.repo.MemberRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
  * One-time, re-runnable historical import from the legacy system's CSV exports. Re-running is safe:
- * banks/loan types/members are upserted by their natural key, and ledger rows are skipped if their
- * transcode was already imported (see LedgerEntryRepository#existsByTransCode).
+ * banks/loan types/members are upserted by their natural key, ledger rows are skipped if their
+ * transcode was already imported (see LedgerEntryRepository#existsByTransCode), and historical loans
+ * are skipped if their reconstructed loan_code already exists.
  *
  * Legacy data is imported as-is and never recomputed - including monthly savings amounts outside the
- * new ₦20k-₦70k rule (that rule only governs new/changed amounts going forward), and legacy loan
- * columns (loanamount/loaninterest/loanrepayplan/loancode) are NOT used to fabricate Loan/repayment-
- * schedule records here: the ledger.csv gives no reliable signal for which LoanType (EML/MNL/PDL) a
- * historical loan was, and guessing would put an incorrect FK into the loans table. Ledger rows import
- * losslessly either way (that's the actual ask); loan_id is simply left null on legacy rows.
+ * new ₦20k-₦70k rule (that rule only governs new/changed amounts going forward). Historical Loan rows
+ * ARE reconstructed from the ledger (see importHistoricalLoans): despite an earlier assumption here
+ * that the loan type couldn't be reliably determined, the legacy transtype column turns out to carry
+ * the loan type code directly on every disbursement row (confirmed against the real data), and the
+ * loancode column gives a reliable grouping key linking a disbursement to its repayments.
  */
 @Service
 public class LegacyImportService {
@@ -41,16 +46,19 @@ public class LegacyImportService {
     private final LoanTypeRepository loanTypeRepository;
     private final MemberRepository memberRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final LoanRepository loanRepository;
     private final PasswordEncoder passwordEncoder;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public LegacyImportService(BankRepository bankRepository, LoanTypeRepository loanTypeRepository,
                                 MemberRepository memberRepository, LedgerEntryRepository ledgerEntryRepository,
-                                PasswordEncoder passwordEncoder, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                                LoanRepository loanRepository, PasswordEncoder passwordEncoder,
+                                org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.bankRepository = bankRepository;
         this.loanTypeRepository = loanTypeRepository;
         this.memberRepository = memberRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.loanRepository = loanRepository;
         this.passwordEncoder = passwordEncoder;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -193,6 +201,171 @@ public class LegacyImportService {
         }
         if (!batch.isEmpty()) jdbcTemplate.batchUpdate(INSERT_LEDGER_SQL, batch);
         return s;
+    }
+
+    private static final String INSERT_LOAN_SQL =
+            "INSERT INTO loans (loan_code, member_id, loan_type_id, requested_amount, interest_amount, " +
+            "disbursed_amount, total_repayable, status, applied_at, disbursed_at, decision_note) " +
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+
+    /**
+     * Reconstructs a historical Loan row per distinct legacy loan (grouped by the ledger's `loancode`
+     * column, e.g. "A00436MNL-2022-04") from its disbursement row(s), then links every ledger row that
+     * belongs to that loan - the disbursement(s) and any matching repayments - by setting their loan_id.
+     * Run this AFTER importLedger (it needs members already imported, and works off the same CSV).
+     * Must be re-run-safe: skips any loancode whose reconstructed loan_code already exists.
+     */
+    @Transactional
+    public Summary importHistoricalLoans(String csvText) {
+        Summary s = new Summary();
+        Map<String, Long> memberIdByRegno = new HashMap<>();
+        for (Member m : memberRepository.findAll()) memberIdByRegno.put(m.getRegno(), m.getId());
+        Map<String, Long> loanTypeIdByCode = new HashMap<>();
+        for (LoanType t : loanTypeRepository.findAll()) loanTypeIdByCode.put(t.getCode().toUpperCase(), t.getId());
+        Set<String> existingLoanCodes = new HashSet<>(
+                jdbcTemplate.queryForList("SELECT loan_code FROM loans WHERE loan_code IS NOT NULL", String.class));
+
+        List<Map<String, String>> rows = CsvUtil.parseCsvWithHeader(csvText);
+
+        Map<String, List<Map<String, String>>> grantsByLoanCode = new LinkedHashMap<>();
+        for (Map<String, String> row : rows) {
+            String transType = row.getOrDefault("transtype", "").trim().toUpperCase();
+            String drCr = row.getOrDefault("drcrstatus", "").trim().toUpperCase();
+            String loanCode = row.getOrDefault("loancode", "").trim();
+            if (drCr.equals("DR") && loanTypeIdByCode.containsKey(transType) && !loanCode.isEmpty()) {
+                grantsByLoanCode.computeIfAbsent(loanCode, k -> new ArrayList<>()).add(row);
+            }
+        }
+
+        Map<String, List<String>> repaymentTransCodesByLoanCode = new HashMap<>();
+        for (Map<String, String> row : rows) {
+            if (!"LRPT".equalsIgnoreCase(row.getOrDefault("transtype", "").trim())) continue;
+            String loanCode = row.getOrDefault("loancode", "").trim();
+            String transCode = row.getOrDefault("transcode", "").trim();
+            if (loanCode.isEmpty() || transCode.isEmpty()) continue;
+            repaymentTransCodesByLoanCode.computeIfAbsent(loanCode, k -> new ArrayList<>()).add(transCode);
+        }
+
+        for (Map.Entry<String, List<Map<String, String>>> entry : grantsByLoanCode.entrySet()) {
+            s.processed++;
+            String csvLoanCode = entry.getKey();
+            String legacyLoanCode = "LEGACY-" + csvLoanCode;
+            if (existingLoanCodes.contains(legacyLoanCode)) { s.skipped++; continue; }
+
+            List<Map<String, String>> group = entry.getValue();
+            Map<String, String> first = group.get(0);
+            String staffId = first.getOrDefault("staffid", "").trim();
+            Long memberId = memberIdByRegno.get(staffId);
+            if (memberId == null) { s.skipped++; s.errors.add("loan " + csvLoanCode + ": unknown staffid " + staffId); continue; }
+
+            String typeCode = first.getOrDefault("transtype", "").trim().toUpperCase();
+            Long loanTypeId = loanTypeIdByCode.get(typeCode);
+            if (loanTypeId == null) { s.skipped++; s.errors.add("loan " + csvLoanCode + ": unknown loan type " + typeCode); continue; }
+
+            long disbursedAmount = 0, requestedAmount = 0, interestAmount = 0;
+            LocalDate earliest = null;
+            String runningStatus = null;
+            for (Map<String, String> r : group) {
+                disbursedAmount += Math.round(parseDouble(r.get("amount"), 0));
+                requestedAmount += Math.round(parseDouble(r.get("loanamount"), 0));
+                interestAmount += Math.round(parseDouble(r.get("loaninterest"), 0));
+                LocalDate d = parseDate(r.get("date"));
+                if (d != null && (earliest == null || d.isBefore(earliest))) earliest = d;
+                String rs = r.getOrDefault("runningstatus", "").trim();
+                if (!rs.isEmpty()) runningStatus = rs;
+            }
+            if (earliest == null) earliest = LocalDate.now();
+            LoanStatus status = mapLoanRunningStatus(runningStatus);
+            Timestamp appliedAt = Timestamp.valueOf(earliest.atStartOfDay());
+
+            final long finalRequested = requestedAmount, finalInterest = interestAmount, finalDisbursed = disbursedAmount;
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbcTemplate.update(con -> {
+                // Postgres's driver returns every column (not just the PK) for a bare
+                // RETURN_GENERATED_KEYS statement, which trips up KeyHolder#getKey() when there's more
+                // than one column - naming the key column explicitly limits it to just "id".
+                var ps = con.prepareStatement(INSERT_LOAN_SQL, new String[]{"id"});
+                ps.setString(1, legacyLoanCode);
+                ps.setLong(2, memberId);
+                ps.setLong(3, loanTypeId);
+                ps.setLong(4, finalRequested);
+                ps.setLong(5, finalInterest);
+                ps.setLong(6, finalDisbursed);
+                ps.setLong(7, finalRequested + finalInterest);
+                ps.setString(8, status.name());
+                ps.setTimestamp(9, appliedAt);
+                ps.setTimestamp(10, appliedAt);
+                ps.setString(11, "Reconstructed from legacy ledger (loan code: " + csvLoanCode + ")");
+                return ps;
+            }, keyHolder);
+            Long loanId = keyHolder.getKey().longValue();
+
+            List<String> transCodesToLink = new ArrayList<>();
+            for (Map<String, String> r : group) {
+                String tc = r.getOrDefault("transcode", "").trim();
+                if (!tc.isEmpty()) transCodesToLink.add(tc);
+            }
+            transCodesToLink.addAll(repaymentTransCodesByLoanCode.getOrDefault(csvLoanCode, List.of()));
+            if (!transCodesToLink.isEmpty()) {
+                List<Object[]> linkBatch = new ArrayList<>(transCodesToLink.size());
+                for (String tc : transCodesToLink) linkBatch.add(new Object[]{loanId, tc});
+                jdbcTemplate.batchUpdate("UPDATE ledger_entries SET loan_id = ? WHERE trans_code = ?", linkBatch);
+            }
+            s.created++;
+        }
+        return s;
+    }
+
+    /**
+     * Backfills monthly_repayment_amount on RUNNING legacy loans - importHistoricalLoans never set it,
+     * so every reconstructed loan's dashboard "loan payments" figure reads as zero until this runs.
+     * Derives the CURRENT installment rate from actual repayment history: a legacy loan's rate can
+     * change over time (renegotiated, or a member catching up after a gap), so if the most recent 2-3
+     * non-zero repayments agree on one amount, that wins over older history; otherwise the most common
+     * non-zero repayment amount is used. Zero-amount ledger rows (adjustments, not real repayments) are
+     * ignored either way. Only fills loans still NULL, so it's safe to re-run as new repayments post.
+     */
+    @Transactional
+    public Summary backfillLegacyMonthlyRepayments() {
+        Summary s = new Summary();
+        for (Loan loan : loanRepository.findByStatusOrderByAppliedAtAsc(LoanStatus.RUNNING)) {
+            if (loan.getMonthlyRepaymentAmount() != null) continue;
+            s.processed++;
+            List<Long> mostRecentFirst = new ArrayList<>();
+            for (LedgerEntry e : ledgerEntryRepository.findByLoanIdOrderByDateAsc(loan.getId())) {
+                if (e.getDrCrStatus() == DrCr.CR && e.getAmount() > 0) mostRecentFirst.add(e.getAmount());
+            }
+            Collections.reverse(mostRecentFirst);
+            if (mostRecentFirst.isEmpty()) { s.skipped++; continue; }
+            loan.setMonthlyRepaymentAmount(resolveMonthlyRate(mostRecentFirst));
+            loanRepository.save(loan);
+            s.updated++;
+        }
+        return s;
+    }
+
+    private static Long resolveMonthlyRate(List<Long> repaymentsMostRecentFirst) {
+        int n = Math.min(3, repaymentsMostRecentFirst.size());
+        List<Long> recent = repaymentsMostRecentFirst.subList(0, n);
+        if (recent.size() >= 2 && new HashSet<>(recent).size() == 1) {
+            return recent.get(0);
+        }
+        Map<Long, Long> counts = new HashMap<>();
+        for (Long amount : repaymentsMostRecentFirst) counts.merge(amount, 1L, Long::sum);
+        return counts.entrySet().stream()
+                .max(Map.Entry.<Long, Long>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    private static LoanStatus mapLoanRunningStatus(String raw) {
+        if (raw == null) return LoanStatus.RUNNING;
+        return switch (raw.trim().toLowerCase()) {
+            case "running" -> LoanStatus.RUNNING;
+            case "complete", "completed" -> LoanStatus.COMPLETED;
+            case "pulses", "pulsed" -> LoanStatus.PULSED;
+            default -> LoanStatus.RUNNING;
+        };
     }
 
     private static MemberStatus mapStatus(String raw) {

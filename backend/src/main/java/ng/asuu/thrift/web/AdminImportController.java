@@ -36,6 +36,16 @@ public class AdminImportController {
         return importService.importLedger(text(file)).text();
     }
 
+    @PostMapping(value = "/historical-loans", consumes = "multipart/form-data")
+    public String historicalLoans(@RequestParam MultipartFile file) throws IOException {
+        return importService.importHistoricalLoans(text(file)).text();
+    }
+
+    @PostMapping("/backfill-legacy-repayments")
+    public String backfillLegacyRepayments() {
+        return importService.backfillLegacyMonthlyRepayments().text();
+    }
+
     private static String text(MultipartFile file) throws IOException {
         return new String(file.getBytes(), StandardCharsets.UTF_8);
     }
