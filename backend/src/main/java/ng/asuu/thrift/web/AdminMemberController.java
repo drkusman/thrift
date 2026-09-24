@@ -76,12 +76,12 @@ public class AdminMemberController {
     @GetMapping("/{id}/transactions/export.xlsx")
     public ResponseEntity<byte[]> exportExcel(@PathVariable Long id) throws IOException {
         Member m = memberService.require(id);
-        return MeController.excelResponse(exportService.toExcel(m, ledgerService.history(id)), m.getRegno());
+        return FileDownload.excel(exportService.toExcel(m, ledgerService.history(id)), "transactions-" + m.getRegno() + ".xlsx");
     }
 
     @GetMapping("/{id}/transactions/export.pdf")
     public ResponseEntity<byte[]> exportPdf(@PathVariable Long id) throws IOException {
         Member m = memberService.require(id);
-        return MeController.pdfResponse(exportService.toPdf(m, ledgerService.history(id)), m.getRegno());
+        return FileDownload.pdf(exportService.toPdf(m, ledgerService.history(id)), "transactions-" + m.getRegno() + ".pdf");
     }
 }

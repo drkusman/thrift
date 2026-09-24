@@ -5,8 +5,6 @@ import ng.asuu.thrift.domain.Member;
 import ng.asuu.thrift.security.MemberPrincipal;
 import ng.asuu.thrift.service.*;
 import ng.asuu.thrift.web.dto.*;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -72,14 +70,14 @@ public class MeController {
     public ResponseEntity<byte[]> exportExcel(@AuthenticationPrincipal MemberPrincipal principal) throws IOException {
         Member member = principal.getMember();
         byte[] bytes = exportService.toExcel(member, ledgerService.history(member.getId()));
-        return excelResponse(bytes, member.getRegno());
+        return FileDownload.excel(bytes, "transactions-" + member.getRegno() + ".xlsx");
     }
 
     @GetMapping("/transactions/export.pdf")
     public ResponseEntity<byte[]> exportPdf(@AuthenticationPrincipal MemberPrincipal principal) throws IOException {
         Member member = principal.getMember();
         byte[] bytes = exportService.toPdf(member, ledgerService.history(member.getId()));
-        return pdfResponse(bytes, member.getRegno());
+        return FileDownload.pdf(bytes, "transactions-" + member.getRegno() + ".pdf");
     }
 
     @GetMapping("/loans")
@@ -122,18 +120,4 @@ public class MeController {
 
     public record BalanceView(long monthlySavings, long loanPayments, long monthlyDeductions,
                                long totalSavings, long loanBalance, long equity) {}
-
-    static ResponseEntity<byte[]> excelResponse(byte[] bytes, String regno) {
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"transactions-" + regno + ".xlsx\"")
-                .body(bytes);
-    }
-
-    static ResponseEntity<byte[]> pdfResponse(byte[] bytes, String regno) {
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"transactions-" + regno + ".pdf\"")
-                .body(bytes);
-    }
 }
