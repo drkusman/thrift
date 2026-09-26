@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { Bank, IosPayoutRequest, SavingsRequest, UnpaidIosCredit } from "@/lib/types";
+import { Bank, IosPayoutRequest, MembershipWithdrawalRequest, MembershipWithdrawalSummary, SavingsRequest, UnpaidIosCredit } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 
@@ -30,16 +30,47 @@ function SettingsContent() {
   const [iosRequests, setIosRequests] = useState<IosPayoutRequest[]>([]);
   const [applyingId, setApplyingId] = useState<number | null>(null);
 
+  const withdrawalGuard = useSubmitGuard();
+  const [withdrawalSummary, setWithdrawalSummary] = useState<MembershipWithdrawalSummary | null>(null);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<MembershipWithdrawalRequest[]>([]);
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
+  const [withdrawalMsg, setWithdrawalMsg] = useState<string | null>(null);
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
+
   function loadIos() {
     api.get<UnpaidIosCredit[]>("/api/me/ios-available").then(setIosCredits);
     api.get<IosPayoutRequest[]>("/api/me/ios-requests").then(setIosRequests);
+  }
+
+  function loadWithdrawal() {
+    api.get<MembershipWithdrawalSummary>("/api/me/withdrawal-summary").then(setWithdrawalSummary);
+    api.get<MembershipWithdrawalRequest[]>("/api/me/withdrawal-requests").then(setWithdrawalRequests);
   }
 
   useEffect(() => {
     api.get<Bank[]>("/api/banks").then(setBanks);
     api.get<SavingsRequest[]>("/api/me/savings-requests").then(setRequests);
     loadIos();
+    loadWithdrawal();
   }, []);
+
+  const hasPendingWithdrawal = withdrawalRequests.some((r) => r.status === "PENDING");
+
+  async function onRequestWithdrawal() {
+    await withdrawalGuard(async () => {
+      setWithdrawalError(null); setWithdrawalMsg(null);
+      setRequestingWithdrawal(true);
+      try {
+        await api.post<MembershipWithdrawalRequest>("/api/me/withdrawal-requests");
+        setWithdrawalMsg("Withdrawal request submitted - awaiting admin approval.");
+        loadWithdrawal();
+      } catch (e) {
+        setWithdrawalError(e instanceof ApiError ? e.message : "Could not submit request.");
+      } finally {
+        setRequestingWithdrawal(false);
+      }
+    });
+  }
 
   useEffect(() => {
     // Prefill the form from the member's currently saved bank details.
@@ -184,6 +215,51 @@ function SettingsContent() {
               {iosRequests.map((r) => (
                 <li key={r.id} className="flex justify-between items-center">
                   <span>{formatNaira(r.requestedAmount)}</span>
+                  <span className={statusBadgeClass(r.status)}>{r.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-6 space-y-4">
+        <h2 className="font-semibold text-[var(--ink)]">Membership withdrawal</h2>
+        <p className="text-sm text-[var(--muted)]">
+          Leaving the cooperative pays out your savings less a cost-on-turnover (COT) charge, once every
+          loan you have is fully liquidated. Requesting here just notifies the admin - nothing happens to
+          your account until they process it.
+        </p>
+        {withdrawalError && <p className="alert-error">{withdrawalError}</p>}
+        {withdrawalMsg && <p className="alert-success">{withdrawalMsg}</p>}
+
+        {withdrawalSummary && (
+          <div className="text-sm space-y-1">
+            <p>Total savings: {formatNaira(withdrawalSummary.totalSavings)}</p>
+            <p>Total loan: {formatNaira(withdrawalSummary.totalLoan)}</p>
+            <p>COT: {formatNaira(withdrawalSummary.cot)}</p>
+            <p className="font-semibold text-[var(--ink)]">Withdrawable now: {formatNaira(withdrawalSummary.withdrawableAmount)}</p>
+            {!withdrawalSummary.canWithdraw && (
+              <p className="text-xs text-[var(--muted)]">You still have running loans - these must be liquidated before withdrawal can be finalized.</p>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={onRequestWithdrawal}
+          disabled={hasPendingWithdrawal || requestingWithdrawal}
+          className="btn btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {requestingWithdrawal ? "Submitting..." : hasPendingWithdrawal ? "Request pending" : "Request withdrawal"}
+        </button>
+
+        {withdrawalRequests.length > 0 && (
+          <div className="pt-3 border-t border-[var(--line)]">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)] mb-2">Past requests</p>
+            <ul className="text-sm space-y-1.5">
+              {withdrawalRequests.map((r) => (
+                <li key={r.id} className="flex justify-between items-center">
+                  <span>{r.requestedAt.slice(0, 10)}</span>
                   <span className={statusBadgeClass(r.status)}>{r.status}</span>
                 </li>
               ))}

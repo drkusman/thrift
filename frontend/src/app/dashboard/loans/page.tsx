@@ -245,28 +245,26 @@ function LoansContent() {
         <div className="card divide-y divide-[var(--line)]">
           {loans.map((l) => (
             <div key={l.id} className="p-4 space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-[var(--ink)] flex items-center gap-2">
-                    {formatNaira(l.requestedAmount)}
-                    <span className={statusBadgeClass(l.status)}>{l.status}</span>
-                  </p>
-                  <p className="text-xs text-[var(--muted)] mt-0.5">{l.loanCode ?? "Pending approval"} &middot; applied {l.appliedAt?.slice(0, 10)}</p>
-                </div>
-                <div className="text-right text-sm">
-                  {l.balance !== null && <p className="font-semibold text-[var(--ink)]">Balance: {formatNaira(l.balance)}</p>}
-                  <p className="text-[var(--muted)]">Monthly: {formatNaira(l.monthlyRepaymentAmount)}</p>
-                  {(l.status === "DISBURSED" || l.status === "RUNNING" || l.status === "PULSED" || l.status === "COMPLETED") && (
-                    <button onClick={() => toggleSchedule(l.id)} className="text-[var(--maroon)] hover:underline text-xs font-medium">
-                      {expanded === l.id ? "Hide schedule" : "View schedule"}
-                    </button>
-                  )}
-                  {l.status === "RUNNING" && (l.balance ?? 0) > 0 && !pendingRequestFor(l.id) && requestingLoanId !== l.id && (
-                    <button onClick={() => setRequestingLoanId(l.id)} className="block mt-1 text-[var(--maroon)] hover:underline text-xs font-medium">
-                      Request liquidation
-                    </button>
-                  )}
-                </div>
+              <div>
+                <p className="font-semibold text-[var(--ink)] flex items-center gap-2">
+                  {formatNaira(l.requestedAmount)}
+                  <span className={statusBadgeClass(l.status)}>{l.status}</span>
+                </p>
+                <p className="text-xs text-[var(--muted)] mt-0.5">{l.loanCode ?? "Pending approval"} &middot; applied {l.appliedAt?.slice(0, 10)}</p>
+              </div>
+              <div className="text-sm">
+                {l.balance !== null && <p className="font-semibold text-[var(--ink)]">Balance: {formatNaira(l.balance)}</p>}
+                <p className="text-[var(--muted)]">Monthly: {formatNaira(l.monthlyRepaymentAmount)}</p>
+                {(l.status === "DISBURSED" || l.status === "RUNNING" || l.status === "PULSED" || l.status === "COMPLETED") && (
+                  <button onClick={() => toggleSchedule(l.id)} className="block text-[var(--maroon)] hover:underline text-xs font-medium">
+                    {expanded === l.id ? "Hide schedule" : "View schedule"}
+                  </button>
+                )}
+                {l.status === "RUNNING" && (l.balance ?? 0) > 0 && !pendingRequestFor(l.id) && requestingLoanId !== l.id && (
+                  <button onClick={() => setRequestingLoanId(l.id)} className="block mt-1 text-[var(--maroon)] hover:underline text-xs font-medium">
+                    Request liquidation
+                  </button>
+                )}
               </div>
 
               {l.status === "PENDING" && (

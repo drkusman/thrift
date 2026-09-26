@@ -154,6 +154,9 @@ function AdminMembersContent() {
                 <td className="text-right whitespace-nowrap">
                   <a href={apiUrl(`/api/admin/members/${m.id}/transactions/export.xlsx`)} className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3">Excel</a>
                   <a href={apiUrl(`/api/admin/members/${m.id}/transactions/export.pdf`)} className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3">PDF</a>
+                  {m.status === "ACTIVE" && (
+                    <Link href={`/admin/members/withdrawal?memberId=${m.id}`} className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3">Withdrawal</Link>
+                  )}
                   <button onClick={() => resetPassword(m.id, m.regno)} className="text-[var(--muted)] hover:underline text-xs font-medium">Reset password</button>
                 </td>
               </tr>

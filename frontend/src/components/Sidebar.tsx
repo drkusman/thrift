@@ -37,6 +37,8 @@ const STAFF_LINKS = [
   },
   { href: "/admin/savings-requests", label: "Savings requests", icon: IconSavings },
   { href: "/admin/ios-requests", label: "IOS requests", icon: IconSavings },
+  { href: "/admin/members/withdrawal", label: "Membership Withdrawal", icon: IconMembers },
+  { href: "/admin/withdrawal-requests", label: "Withdrawal requests", icon: IconSavings },
   { href: "/admin/import", label: "Legacy import", icon: IconImport },
 ];
 

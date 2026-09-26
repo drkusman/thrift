@@ -125,6 +125,23 @@ export type LoanLiquidationRequest = {
   decisionNote: string | null;
 };
 
+export type MembershipWithdrawalSummary = {
+  totalSavings: number;
+  totalLoan: number;
+  balance: number;
+  cot: number;
+  withdrawableAmount: number;
+  canWithdraw: boolean;
+};
+
+export type MembershipWithdrawalRequest = {
+  id: number;
+  memberId: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt: string;
+  decisionNote: string | null;
+};
+
 export type IosPayoutRequest = {
   id: number;
   memberId: number;

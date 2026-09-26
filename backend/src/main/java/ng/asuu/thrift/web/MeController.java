@@ -21,17 +21,20 @@ public class MeController {
     private final SavingsService savingsService;
     private final IosPayoutService iosPayoutService;
     private final LoanLiquidationService loanLiquidationService;
+    private final MembershipWithdrawalService membershipWithdrawalService;
     private final TransactionExportService exportService;
 
     public MeController(MemberService memberService, LedgerService ledgerService, LoanService loanService,
                          SavingsService savingsService, IosPayoutService iosPayoutService,
-                         LoanLiquidationService loanLiquidationService, TransactionExportService exportService) {
+                         LoanLiquidationService loanLiquidationService,
+                         MembershipWithdrawalService membershipWithdrawalService, TransactionExportService exportService) {
         this.memberService = memberService;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
         this.savingsService = savingsService;
         this.iosPayoutService = iosPayoutService;
         this.loanLiquidationService = loanLiquidationService;
+        this.membershipWithdrawalService = membershipWithdrawalService;
         this.exportService = exportService;
     }
 
@@ -137,6 +140,21 @@ public class MeController {
     }
 
     public record ApplyLiquidationRequest(long amount) {}
+
+    @GetMapping("/withdrawal-summary")
+    public MembershipWithdrawalSummaryDto withdrawalSummary(@AuthenticationPrincipal MemberPrincipal principal) {
+        return MembershipWithdrawalSummaryDto.of(membershipWithdrawalService.summary(principal.getMember().getId()));
+    }
+
+    @GetMapping("/withdrawal-requests")
+    public List<MembershipWithdrawalRequestDto> withdrawalRequests(@AuthenticationPrincipal MemberPrincipal principal) {
+        return membershipWithdrawalService.requestsForMember(principal.getMember().getId()).stream().map(MembershipWithdrawalRequestDto::of).toList();
+    }
+
+    @PostMapping("/withdrawal-requests")
+    public MembershipWithdrawalRequestDto applyForWithdrawal(@AuthenticationPrincipal MemberPrincipal principal) {
+        return MembershipWithdrawalRequestDto.of(membershipWithdrawalService.apply(principal.getMember()));
+    }
 
     @GetMapping("/savings-requests")
     public List<SavingsRequestDto> savingsRequests(@AuthenticationPrincipal MemberPrincipal principal) {
