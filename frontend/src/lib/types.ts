@@ -105,8 +105,18 @@ export type IosPayoutRequest = {
   id: number;
   memberId: number;
   requestedAmount: number;
+  sourceLedgerEntryId: number | null;
   status: "PENDING" | "PAID" | "REJECTED";
   requestedAt: string;
+};
+
+/** One still-unpaid IOS1 credit (one year's interest) a member or admin can apply against - see
+ *  LedgerService.unpaidIosCredits on the backend. */
+export type UnpaidIosCredit = {
+  ledgerEntryId: number;
+  date: string;
+  description: string;
+  amount: number;
 };
 
 export type AdminSummary = {

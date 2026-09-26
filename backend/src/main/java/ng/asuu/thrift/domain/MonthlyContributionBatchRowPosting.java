@@ -12,5 +12,8 @@ public class MonthlyContributionBatchRowPosting {
     @Column(name = "batch_row_id", nullable = false) private Long batchRowId;
     @Column(name = "ledger_entry_id", nullable = false) private Long ledgerEntryId;
     @Column(name = "schedule_id") private Long scheduleId;
+    /** Set when this posting was an IOS2 upload row that auto-resolved a pending IosPayoutRequest, so
+     *  deleting the batch can revert that request back to PENDING. */
+    @Column(name = "ios_payout_request_id") private Long iosPayoutRequestId;
     @Column(nullable = false) private long amount;
 }

@@ -82,6 +82,7 @@ public class MonthlyContributionService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final LedgerService ledgerService;
     private final LoanService loanService;
+    private final IosPayoutService iosPayoutService;
 
     public MonthlyContributionService(MonthlyContributionBatchRepository batchRepository,
                                        MonthlyContributionBatchRowRepository rowRepository,
@@ -91,7 +92,8 @@ public class MonthlyContributionService {
                                        LoanRepository loanRepository,
                                        LedgerEntryRepository ledgerEntryRepository,
                                        LedgerService ledgerService,
-                                       LoanService loanService) {
+                                       LoanService loanService,
+                                       IosPayoutService iosPayoutService) {
         this.batchRepository = batchRepository;
         this.rowRepository = rowRepository;
         this.postingRepository = postingRepository;
@@ -101,6 +103,7 @@ public class MonthlyContributionService {
         this.ledgerEntryRepository = ledgerEntryRepository;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
+        this.iosPayoutService = iosPayoutService;
     }
 
     /** Periods whose main contribution (SAVINGS/LOAN_REPAYMENT) has already been posted - the frontend
@@ -218,8 +221,10 @@ public class MonthlyContributionService {
                         postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
                                 "IOS1", "Interest on Savings", DrCr.CR, batchRow.getId());
                     } else if (IOS2_KINDS.contains(kindUpper)) {
-                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
-                                "IOS2", "Payment of Dividend", DrCr.DR, batchRow.getId());
+                        var entry = ledgerService.post(memberId, amount, postDate, "Payment of Dividend - " + periodMonth,
+                                "IOS2", TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+                        Long resolvedRequestId = iosPayoutService.autoResolveOnUpload(memberId, amount, admin.getId());
+                        savePosting(batchRow.getId(), entry.getId(), null, amount, resolvedRequestId);
                     } else {
                         allocateSavings(admin, memberId, amount, periodMonth, postDate, batchRow.getId());
                     }
@@ -366,11 +371,16 @@ public class MonthlyContributionService {
     }
 
     private void savePosting(Long batchRowId, Long ledgerEntryId, Long scheduleId, long amount) {
+        savePosting(batchRowId, ledgerEntryId, scheduleId, amount, null);
+    }
+
+    private void savePosting(Long batchRowId, Long ledgerEntryId, Long scheduleId, long amount, Long iosPayoutRequestId) {
         MonthlyContributionBatchRowPosting posting = new MonthlyContributionBatchRowPosting();
         posting.setBatchRowId(batchRowId);
         posting.setLedgerEntryId(ledgerEntryId);
         posting.setScheduleId(scheduleId);
         posting.setAmount(amount);
+        posting.setIosPayoutRequestId(iosPayoutRequestId);
         postingRepository.save(posting);
     }
 
@@ -393,6 +403,9 @@ public class MonthlyContributionService {
         for (MonthlyContributionBatchRowPosting posting : postings) {
             if (posting.getScheduleId() != null) {
                 scheduleRepository.findById(posting.getScheduleId()).ifPresent(installment -> reverseInstallment(installment, posting.getAmount()));
+            }
+            if (posting.getIosPayoutRequestId() != null) {
+                iosPayoutService.revertToPending(posting.getIosPayoutRequestId());
             }
             ledgerEntryIds.add(posting.getLedgerEntryId());
         }

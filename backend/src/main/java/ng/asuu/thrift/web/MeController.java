@@ -121,8 +121,8 @@ public class MeController {
     }
 
     @GetMapping("/ios-available")
-    public long iosAvailable(@AuthenticationPrincipal MemberPrincipal principal) {
-        return iosPayoutService.availableToApply(principal.getMember().getId());
+    public List<UnpaidIosCreditDto> iosAvailable(@AuthenticationPrincipal MemberPrincipal principal) {
+        return iosPayoutService.unpaidCredits(principal.getMember().getId()).stream().map(UnpaidIosCreditDto::of).toList();
     }
 
     @GetMapping("/ios-requests")
@@ -131,9 +131,11 @@ public class MeController {
     }
 
     @PostMapping("/ios-requests")
-    public IosPayoutRequestDto applyForIos(@AuthenticationPrincipal MemberPrincipal principal) {
-        return IosPayoutRequestDto.of(iosPayoutService.apply(principal.getMember().getId()));
+    public IosPayoutRequestDto applyForIos(@AuthenticationPrincipal MemberPrincipal principal, @RequestBody ApplyForIosRequest req) {
+        return IosPayoutRequestDto.of(iosPayoutService.apply(principal.getMember().getId(), req.ledgerEntryId()));
     }
+
+    public record ApplyForIosRequest(Long ledgerEntryId) {}
 
     public record BalanceView(long monthlySavings, long loanPayments, long monthlyDeductions,
                                long totalSavings, long loanBalance, long equity) {}

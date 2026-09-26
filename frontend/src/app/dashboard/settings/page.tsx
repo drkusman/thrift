@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { Bank, IosPayoutRequest, SavingsRequest } from "@/lib/types";
+import { Bank, IosPayoutRequest, SavingsRequest, UnpaidIosCredit } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 
@@ -24,13 +24,14 @@ function SettingsContent() {
   const [savingsMsg, setSavingsMsg] = useState<string | null>(null);
   const [requests, setRequests] = useState<SavingsRequest[]>([]);
 
-  const [iosAvailable, setIosAvailable] = useState(0);
+  const [iosCredits, setIosCredits] = useState<UnpaidIosCredit[]>([]);
   const [iosError, setIosError] = useState<string | null>(null);
   const [iosMsg, setIosMsg] = useState<string | null>(null);
   const [iosRequests, setIosRequests] = useState<IosPayoutRequest[]>([]);
+  const [applyingId, setApplyingId] = useState<number | null>(null);
 
   function loadIos() {
-    api.get<number>("/api/me/ios-available").then(setIosAvailable);
+    api.get<UnpaidIosCredit[]>("/api/me/ios-available").then(setIosCredits);
     api.get<IosPayoutRequest[]>("/api/me/ios-requests").then(setIosRequests);
   }
 
@@ -78,16 +79,19 @@ function SettingsContent() {
     });
   }
 
-  async function onApplyForIos() {
+  async function onApplyForIos(credit: UnpaidIosCredit) {
     await iosGuard(async () => {
       setIosError(null); setIosMsg(null);
+      setApplyingId(credit.ledgerEntryId);
       try {
-        const req = await api.post<IosPayoutRequest>("/api/me/ios-requests", {});
+        const req = await api.post<IosPayoutRequest>("/api/me/ios-requests", { ledgerEntryId: credit.ledgerEntryId });
         setIosRequests((prev) => [req, ...prev]);
         setIosMsg(`Request submitted for ${formatNaira(req.requestedAmount)} - awaiting admin processing.`);
         loadIos();
       } catch (e) {
         setIosError(e instanceof ApiError ? e.message : "Could not submit request.");
+      } finally {
+        setApplyingId(null);
       }
     });
   }
@@ -145,14 +149,33 @@ function SettingsContent() {
       <div className="card p-6 space-y-4">
         <h2 className="font-semibold text-[var(--ink)]">Interest on savings (IOS)</h2>
         <p className="text-sm text-[var(--muted)]">
-          Unpaid balance: {formatNaira(iosAvailable)}. Applying pays out this exact amount - there&rsquo;s
+          Each year&rsquo;s unpaid interest is applied for on its own, not blended into one total - there&rsquo;s
           no amount to type in, and this isn&rsquo;t limited to the current fiscal year.
         </p>
         {iosError && <p className="alert-error">{iosError}</p>}
         {iosMsg && <p className="alert-success">{iosMsg}</p>}
-        <button onClick={onApplyForIos} disabled={iosAvailable <= 0} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
-          Apply for {formatNaira(iosAvailable)}
-        </button>
+
+        {iosCredits.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">No unpaid IOS to apply for.</p>
+        ) : (
+          <ul className="space-y-2">
+            {iosCredits.map((c) => (
+              <li key={c.ledgerEntryId} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--maroon-light)]/40">
+                <div>
+                  <p className="font-medium text-[var(--ink)]">{formatNaira(c.amount)}</p>
+                  <p className="text-xs text-[var(--muted)]">{c.description} &middot; {c.date}</p>
+                </div>
+                <button
+                  onClick={() => onApplyForIos(c)}
+                  disabled={applyingId === c.ledgerEntryId}
+                  className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {applyingId === c.ledgerEntryId ? "Applying..." : "Apply"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {iosRequests.length > 0 && (
           <div className="pt-3 border-t border-[var(--line)]">
