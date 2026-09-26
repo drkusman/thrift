@@ -40,6 +40,7 @@ const STAFF_LINKS = [
   { href: "/admin/ios-requests", label: "IOS requests", icon: IconSavings },
   { href: "/admin/members/withdrawal", label: "Membership Withdrawal", icon: IconMembers },
   { href: "/admin/withdrawal-requests", label: "Withdrawal requests", icon: IconSavings },
+  { href: "/admin/income-report", label: "Income report", icon: IconDashboard },
   { href: "/admin/import", label: "Legacy import", icon: IconImport },
 ];
 
