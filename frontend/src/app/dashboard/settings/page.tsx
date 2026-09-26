@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { Bank, SavingsRequest } from "@/lib/types";
+import { Bank, IosPayoutRequest, SavingsRequest } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 
@@ -12,6 +12,7 @@ function SettingsContent() {
   const { member, refresh } = useAuth();
   const bankGuard = useSubmitGuard();
   const savingsGuard = useSubmitGuard();
+  const iosGuard = useSubmitGuard();
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankId, setBankId] = useState<number | "">("");
   const [accountNo, setAccountNo] = useState("");
@@ -23,9 +24,20 @@ function SettingsContent() {
   const [savingsMsg, setSavingsMsg] = useState<string | null>(null);
   const [requests, setRequests] = useState<SavingsRequest[]>([]);
 
+  const [iosAvailable, setIosAvailable] = useState(0);
+  const [iosError, setIosError] = useState<string | null>(null);
+  const [iosMsg, setIosMsg] = useState<string | null>(null);
+  const [iosRequests, setIosRequests] = useState<IosPayoutRequest[]>([]);
+
+  function loadIos() {
+    api.get<number>("/api/me/ios-available").then(setIosAvailable);
+    api.get<IosPayoutRequest[]>("/api/me/ios-requests").then(setIosRequests);
+  }
+
   useEffect(() => {
     api.get<Bank[]>("/api/banks").then(setBanks);
     api.get<SavingsRequest[]>("/api/me/savings-requests").then(setRequests);
+    loadIos();
   }, []);
 
   useEffect(() => {
@@ -62,6 +74,20 @@ function SettingsContent() {
         setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦70,000 require approval).");
       } catch (e) {
         setSavingsError(e instanceof ApiError ? e.message : "Could not submit request.");
+      }
+    });
+  }
+
+  async function onApplyForIos() {
+    await iosGuard(async () => {
+      setIosError(null); setIosMsg(null);
+      try {
+        const req = await api.post<IosPayoutRequest>("/api/me/ios-requests", {});
+        setIosRequests((prev) => [req, ...prev]);
+        setIosMsg(`Request submitted for ${formatNaira(req.requestedAmount)} - awaiting admin processing.`);
+        loadIos();
+      } catch (e) {
+        setIosError(e instanceof ApiError ? e.message : "Could not submit request.");
       }
     });
   }
@@ -115,6 +141,33 @@ function SettingsContent() {
           </div>
         )}
       </form>
+
+      <div className="card p-6 space-y-4">
+        <h2 className="font-semibold text-[var(--ink)]">Interest on savings (IOS)</h2>
+        <p className="text-sm text-[var(--muted)]">
+          Unpaid balance: {formatNaira(iosAvailable)}. Applying pays out this exact amount - there&rsquo;s
+          no amount to type in, and this isn&rsquo;t limited to the current fiscal year.
+        </p>
+        {iosError && <p className="alert-error">{iosError}</p>}
+        {iosMsg && <p className="alert-success">{iosMsg}</p>}
+        <button onClick={onApplyForIos} disabled={iosAvailable <= 0} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+          Apply for {formatNaira(iosAvailable)}
+        </button>
+
+        {iosRequests.length > 0 && (
+          <div className="pt-3 border-t border-[var(--line)]">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)] mb-2">Past requests</p>
+            <ul className="text-sm space-y-1.5">
+              {iosRequests.map((r) => (
+                <li key={r.id} className="flex justify-between items-center">
+                  <span>{formatNaira(r.requestedAmount)}</span>
+                  <span className={statusBadgeClass(r.status)}>{r.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

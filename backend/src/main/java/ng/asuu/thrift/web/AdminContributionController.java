@@ -55,18 +55,19 @@ public class AdminContributionController {
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public Summary upload(@AuthenticationPrincipal MemberPrincipal admin,
                            @RequestParam String periodMonth,
+                           @RequestParam boolean mainContribution,
                            @RequestParam MultipartFile file) throws IOException {
-        var batch = monthlyContributionService.upload(admin.getMember(), periodMonth, file);
+        var batch = monthlyContributionService.upload(admin.getMember(), periodMonth, mainContribution, file);
         return new Summary(batch.getId(), batch.getTotalRows(), batch.getMatchedRows(), batch.getTotalAmount());
     }
 
     public record Summary(Long batchId, int totalRows, int matchedRows, long totalAmount) {}
 
     public record BatchDto(Long id, String periodMonth, String fileName, String uploadedAt,
-                            int totalRows, int matchedRows, long totalAmount, boolean hasFile) {
+                            int totalRows, int matchedRows, long totalAmount, boolean hasFile, boolean locksPeriod) {
         static BatchDto of(MonthlyContributionBatch b) {
             return new BatchDto(b.getId(), b.getPeriodMonth(), b.getFileName(), b.getUploadedAt().toString(),
-                    b.getTotalRows(), b.getMatchedRows(), b.getTotalAmount(), b.getFileBytes() != null);
+                    b.getTotalRows(), b.getMatchedRows(), b.getTotalAmount(), b.getFileBytes() != null, b.isLocksPeriod());
         }
     }
 }

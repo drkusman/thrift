@@ -29,11 +29,12 @@ const STAFF_LINKS = [
     children: [
       { href: "/admin/loans", label: "Loan Approval" },
       { href: "/admin/remittance", label: "Monthly Remittance" },
-      { href: "/admin/loans/list", label: "Suspended Loans" },
+      { href: "/admin/loans/list", label: "Loan List" },
       { href: "/admin/contributions", label: "Monthly Upload" },
     ],
   },
   { href: "/admin/savings-requests", label: "Savings requests", icon: IconSavings },
+  { href: "/admin/ios-requests", label: "IOS requests", icon: IconSavings },
   { href: "/admin/import", label: "Legacy import", icon: IconImport },
 ];
 

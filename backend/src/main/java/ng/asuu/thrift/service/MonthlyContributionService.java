@@ -39,6 +39,12 @@ import java.util.Set;
  *   <li>REFUND (or OVER DEDUCTION, REFUND OF OVER DEDUCTION) - a single savings credit, transType MSVG2 -
  *       same code the SAVINGS waterfall below uses for its own leftover, but postable on its own too
  *       (e.g. a manual correction unrelated to that month's savings lump sum).
+ *   <li>IOS1 - a single savings credit, transType IOS1. The admin's end-of-fiscal-year interest-on-savings
+ *       calculation, uploaded as a credit to every member at once.
+ *   <li>IOS2 - a single savings <b>debit</b>, transType IOS2 - IOS1's reaction: a member can optionally
+ *       apply at any time to have their accumulated interest paid out. The admin pays them externally
+ *       (bank transfer) then uploads that same amount here as an IOS2 debit, removing it from their
+ *       savings since it's no longer sitting in the thrift account.
  *   <li>Anything else (including SAVINGS, or a blank cell) - the complex case: the amount is a single
  *       lump sum that pays the member's own standing monthly savings first, then whatever's left is
  *       applied one loan at a time (oldest disbursed first) to each RUNNING loan's own repayment plan,
@@ -49,6 +55,14 @@ import java.util.Set;
  * </ul>
  * KIND nomenclature isn't consistent across uploads, so recognition is case-insensitive and tolerant of
  * the shorter variants above rather than requiring the exact canonical phrase.
+ * <p>
+ * The admin declares, per upload, whether it's the bulk payroll-driven "Monthly contribution" file (see
+ * upload's mainContribution parameter) - that one locks its period against a double-run, since re-posting
+ * it would double-credit everyone in it - or an "IOS / Correction" file (IOS1, IOS2, Cash Deposit, Refund
+ * of Over Deduction), which doesn't lock the period: those are ad-hoc, per-member events (an annual
+ * interest run, a member's one-off payout, a manual correction) that legitimately happen more than once,
+ * even several times, within a period whose main contribution is already posted. The declaration is
+ * checked against the file's actual KIND content, not blindly trusted either way.
  */
 @Service
 public class MonthlyContributionService {
@@ -56,6 +70,8 @@ public class MonthlyContributionService {
      *  the nomenclature isn't consistent across uploads, so every variant seen in practice is accepted. */
     private static final Set<String> CASH_DEPOSIT_KINDS = Set.of("CASH", "DEPOSIT", "CASH DEPOSIT");
     private static final Set<String> REFUND_OVER_DEDUCTION_KINDS = Set.of("REFUND", "OVER DEDUCTION", "REFUND OF OVER DEDUCTION");
+    private static final Set<String> IOS1_KINDS = Set.of("IOS1", "INTEREST ON SAVINGS");
+    private static final Set<String> IOS2_KINDS = Set.of("IOS2", "PAYMENT OF DIVIDEND");
 
     private final MonthlyContributionBatchRepository batchRepository;
     private final MonthlyContributionBatchRowRepository rowRepository;
@@ -87,11 +103,15 @@ public class MonthlyContributionService {
         this.loanService = loanService;
     }
 
-    /** Periods that already have an upload - the frontend disables these in its month picker so the
-     *  same period can't be posted twice; admin must deleteBatch() first to reopen one. */
+    /** Periods whose main contribution (SAVINGS/LOAN_REPAYMENT) has already been posted - the frontend
+     *  disables these in its month picker so that specific upload can't be posted twice; admin must
+     *  deleteBatch() first to reopen one. A period with only IOS1/IOS2/Cash Deposit/Refund of Over
+     *  Deduction batches stays open, since those are ad-hoc per-member events that legitimately recur. */
     public Set<String> uploadedPeriods() {
         Set<String> periods = new LinkedHashSet<>();
-        for (MonthlyContributionBatch b : batchRepository.findAllByOrderByUploadedAtDesc()) periods.add(b.getPeriodMonth());
+        for (MonthlyContributionBatch b : batchRepository.findAllByOrderByUploadedAtDesc()) {
+            if (b.isLocksPeriod()) periods.add(b.getPeriodMonth());
+        }
         return periods;
     }
 
@@ -104,22 +124,39 @@ public class MonthlyContributionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such batch: " + id));
     }
 
+    /**
+     * mainContribution is the admin's own explicit declaration of which kind of file this is - not
+     * inferred from KIND cell content alone, so the choice (and therefore whether the period gets
+     * locked) is always visible and deliberate, rather than a side effect of what happens to be typed
+     * in a column. true = the bulk monthly SAVINGS/LOAN_REPAYMENT file, locks the period; false = an
+     * IOS1/IOS2/Cash Deposit/Refund of Over Deduction correction, which doesn't. Content is still
+     * checked against that declaration: a "correction" upload that actually contains a locking row is
+     * rejected outright rather than silently let through without the protection it needs.
+     */
     @Transactional
-    public MonthlyContributionBatch upload(Member admin, String periodMonth, MultipartFile file) throws IOException {
-        if (!batchRepository.findByPeriodMonth(periodMonth).isEmpty()) {
+    public MonthlyContributionBatch upload(Member admin, String periodMonth, boolean mainContribution, MultipartFile file) throws IOException {
+        byte[] fileBytes = file.getBytes();
+        if (!mainContribution && containsLockingKind(fileBytes)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This file has a SAVINGS or LOAN_REPAYMENT row, which needs the period lock - re-upload it with " +
+                    "\"Monthly contribution\" selected instead of \"IOS / Correction\".");
+        }
+        boolean locksPeriod = mainContribution;
+        if (locksPeriod && batchRepository.findByPeriodMonth(periodMonth).stream().anyMatch(MonthlyContributionBatch::isLocksPeriod)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    periodMonth + " has already been uploaded - delete that batch first to re-upload it.");
+                    periodMonth + " already has a posted SAVINGS/LOAN_REPAYMENT upload - delete that batch first to " +
+                    "re-upload it. IOS1, IOS2, Cash Deposit, and Refund of Over Deduction aren't affected by this and " +
+                    "can still be uploaded for this period.");
         }
         Map<String, Long> memberIdByRegno = new HashMap<>();
         for (Member m : memberRepository.findAll()) memberIdByRegno.put(m.getRegno(), m.getId());
-
-        byte[] fileBytes = file.getBytes();
 
         MonthlyContributionBatch batch = new MonthlyContributionBatch();
         batch.setPeriodMonth(periodMonth);
         batch.setFileName(file.getOriginalFilename());
         batch.setUploadedBy(admin.getId());
         batch.setFileBytes(fileBytes);
+        batch.setLocksPeriod(locksPeriod);
         batch = batchRepository.save(batch);
 
         int total = 0, matched = 0;
@@ -172,11 +209,17 @@ public class MonthlyContributionService {
                         Long scheduleId = applyToSchedule(memberId, amount);
                         savePosting(batchRow.getId(), entry.getId(), scheduleId, amount);
                     } else if (CASH_DEPOSIT_KINDS.contains(kindUpper)) {
-                        postSimpleSavingsCredit(admin, memberId, amount, postDate, periodMonth,
-                                "MSVG3", "Cash deposit", batchRow.getId());
+                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                                "MSVG3", "Cash deposit", DrCr.CR, batchRow.getId());
                     } else if (REFUND_OVER_DEDUCTION_KINDS.contains(kindUpper)) {
-                        postSimpleSavingsCredit(admin, memberId, amount, postDate, periodMonth,
-                                "MSVG2", "Refund of Over Deduction", batchRow.getId());
+                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                                "MSVG2", "Refund of Over Deduction", DrCr.CR, batchRow.getId());
+                    } else if (IOS1_KINDS.contains(kindUpper)) {
+                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                                "IOS1", "Interest on Savings", DrCr.CR, batchRow.getId());
+                    } else if (IOS2_KINDS.contains(kindUpper)) {
+                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                                "IOS2", "Payment of Dividend", DrCr.DR, batchRow.getId());
                     } else {
                         allocateSavings(admin, memberId, amount, periodMonth, postDate, batchRow.getId());
                     }
@@ -192,6 +235,42 @@ public class MonthlyContributionService {
         batch.setMatchedRows(matched);
         batch.setTotalAmount(totalAmount);
         return batchRepository.save(batch);
+    }
+
+    /** A LOAN_REPAYMENT row, or anything that falls through to the SAVINGS waterfall (including a blank
+     *  KIND cell, or no KIND column at all), is a bulk once-per-period posting that can't safely be
+     *  re-run for the same period. IOS1/IOS2/Cash Deposit/Refund of Over Deduction are ad-hoc per-member
+     *  events that can legitimately recur, so they're exempt. */
+    private static boolean isLockingKind(String kindUpper) {
+        if (CASH_DEPOSIT_KINDS.contains(kindUpper)) return false;
+        if (REFUND_OVER_DEDUCTION_KINDS.contains(kindUpper)) return false;
+        if (IOS1_KINDS.contains(kindUpper)) return false;
+        if (IOS2_KINDS.contains(kindUpper)) return false;
+        return true;
+    }
+
+    /** Pre-scans the workbook's KIND column, without touching the database, to decide whether this
+     *  upload needs the period lock at all - avoids blocking a same-period IOS1/IOS2/Cash Deposit/Refund
+     *  upload just because that period already has a locking batch. */
+    private boolean containsLockingKind(byte[] fileBytes) throws IOException {
+        try (InputStream in = new ByteArrayInputStream(fileBytes); Workbook wb = WorkbookFactory.create(in)) {
+            Sheet sheet = wb.getSheetAt(0);
+            Row header = sheet.getRow(0);
+            int kindCol = -1;
+            for (Cell c : header) {
+                if (c.getStringCellValue().trim().equalsIgnoreCase("kind")) kindCol = c.getColumnIndex();
+            }
+            if (kindCol < 0) return true; // no KIND column at all - every row defaults to SAVINGS
+
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+                String kind = stringOf(row.getCell(kindCol));
+                if (kind == null || kind.isBlank()) return true; // defaults to SAVINGS
+                if (isLockingKind(kind.trim().toUpperCase())) return true;
+            }
+            return false;
+        }
     }
 
     /** Returns the installment's id this payment was applied to, so a later batch deletion can reverse
@@ -274,14 +353,15 @@ public class MonthlyContributionService {
         }
     }
 
-    /** Cash Deposit (MSVG3) and a standalone Refund of Over Deduction (MSVG2) row are both a single
-     *  plain credit to the member's savings, no loan involved - unlike the auto-generated MSVG2 the
-     *  SAVINGS waterfall can produce as its own leftover, an admin can also post one directly as its own
-     *  upload row (e.g. a manual correction that isn't tied to that month's savings lump sum at all). */
-    private void postSimpleSavingsCredit(Member admin, Long memberId, long amount, LocalDate postDate,
-                                          String periodMonth, String transType, String label, Long batchRowId) {
+    /** A plain single posting against the member's savings, no loan or waterfall involved - covers Cash
+     *  Deposit (MSVG3, CR), a standalone Refund of Over Deduction (MSVG2, CR - same code the SAVINGS
+     *  waterfall produces for its own leftover, but postable directly too), IOS1 (CR, the admin's
+     *  end-of-fiscal-year interest calculation), and IOS2 (DR, its optional reaction when a member cashes
+     *  out their interest externally and it needs removing from their savings here). */
+    private void postSimpleSavingsEntry(Member admin, Long memberId, long amount, LocalDate postDate,
+                                         String periodMonth, String transType, String label, DrCr drCr, Long batchRowId) {
         var entry = ledgerService.post(memberId, amount, postDate, label + " - " + periodMonth,
-                transType, TransCat.SAVINGS, DrCr.CR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+                transType, TransCat.SAVINGS, drCr, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
         savePosting(batchRowId, entry.getId(), null, amount);
     }
 
@@ -368,8 +448,8 @@ public class MonthlyContributionService {
             example.createCell(4).setCellValue("SAVINGS");
 
             Row note = sheet.createRow(3);
-            note.createCell(0).setCellValue("KIND is SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, or REFUND OF OVER DEDUCTION " +
-                    "(default SAVINGS if left blank). SN and NAME are for readability only - only REGNO and AMOUNT are used to post the entry.");
+            note.createCell(0).setCellValue("KIND is SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, REFUND OF OVER DEDUCTION, " +
+                    "IOS1, or IOS2 (default SAVINGS if left blank). SN and NAME are for readability only - only REGNO and AMOUNT are used to post the entry.");
 
             for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
 

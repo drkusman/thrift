@@ -19,14 +19,16 @@ public class MeController {
     private final LedgerService ledgerService;
     private final LoanService loanService;
     private final SavingsService savingsService;
+    private final IosPayoutService iosPayoutService;
     private final TransactionExportService exportService;
 
     public MeController(MemberService memberService, LedgerService ledgerService, LoanService loanService,
-                         SavingsService savingsService, TransactionExportService exportService) {
+                         SavingsService savingsService, IosPayoutService iosPayoutService, TransactionExportService exportService) {
         this.memberService = memberService;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
         this.savingsService = savingsService;
+        this.iosPayoutService = iosPayoutService;
         this.exportService = exportService;
     }
 
@@ -116,6 +118,21 @@ public class MeController {
     @PostMapping("/savings-requests")
     public SavingsRequestDto requestSavingsChange(@AuthenticationPrincipal MemberPrincipal principal, @Valid @RequestBody SavingsChangeAmountRequest req) {
         return SavingsRequestDto.of(savingsService.requestChange(principal.getMember(), req.amount()));
+    }
+
+    @GetMapping("/ios-available")
+    public long iosAvailable(@AuthenticationPrincipal MemberPrincipal principal) {
+        return iosPayoutService.availableToApply(principal.getMember().getId());
+    }
+
+    @GetMapping("/ios-requests")
+    public List<IosPayoutRequestDto> iosRequests(@AuthenticationPrincipal MemberPrincipal principal) {
+        return iosPayoutService.forMember(principal.getMember().getId()).stream().map(IosPayoutRequestDto::of).toList();
+    }
+
+    @PostMapping("/ios-requests")
+    public IosPayoutRequestDto applyForIos(@AuthenticationPrincipal MemberPrincipal principal) {
+        return IosPayoutRequestDto.of(iosPayoutService.apply(principal.getMember().getId()));
     }
 
     public record BalanceView(long monthlySavings, long loanPayments, long monthlyDeductions,

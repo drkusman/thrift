@@ -101,6 +101,14 @@ export type SavingsRequest = {
   requestedAt: string;
 };
 
+export type IosPayoutRequest = {
+  id: number;
+  memberId: number;
+  requestedAmount: number;
+  status: "PENDING" | "PAID" | "REJECTED";
+  requestedAt: string;
+};
+
 export type AdminSummary = {
   totalMonthlySavings: number;
   totalLoanPayments: number;

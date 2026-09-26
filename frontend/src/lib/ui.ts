@@ -18,6 +18,7 @@ export function statusBadgeClass(status: string) {
     case "COMPLETED":
     case "ACTIVE":
     case "ACCEPTED":
+    case "PAID":
       return "badge badge-green";
     case "REJECTED":
     case "DEFAULTED":

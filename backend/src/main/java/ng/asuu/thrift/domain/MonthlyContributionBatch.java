@@ -19,4 +19,8 @@ public class MonthlyContributionBatch {
     @Column(name = "total_amount") private long totalAmount;
     /** The original workbook as uploaded, so an admin can re-download exactly what was submitted. */
     @Column(name = "file_bytes") private byte[] fileBytes;
+    /** True if any row in this batch went through the SAVINGS waterfall or a LOAN_REPAYMENT posting -
+     *  the only kinds that can't safely be re-run for the same period. IOS1/IOS2/Cash Deposit/Refund of
+     *  Over Deduction never set this, so their periods stay open for further uploads of the same kind. */
+    @Column(name = "locks_period", nullable = false) private boolean locksPeriod = true;
 }

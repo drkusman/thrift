@@ -9,7 +9,7 @@ import { useSubmitGuard } from "@/lib/use-submit-guard";
 type UploadResult = { batchId: number; totalRows: number; matchedRows: number; totalAmount: number };
 type Batch = {
   id: number; periodMonth: string; fileName: string | null; uploadedAt: string;
-  totalRows: number; matchedRows: number; totalAmount: number; hasFile: boolean;
+  totalRows: number; matchedRows: number; totalAmount: number; hasFile: boolean; locksPeriod: boolean;
 };
 
 /** The thrift's fiscal year runs 1 November to 31 October (matching AdminAnalyticsService's own
@@ -33,6 +33,7 @@ function AdminContributionsContent() {
   const guard = useSubmitGuard();
   const options = useMemo(monthOptions, []);
   const [periodMonth, setPeriodMonth] = useState("");
+  const [isIos, setIsIos] = useState(false);
   const [uploadedPeriods, setUploadedPeriods] = useState<Set<string>>(new Set());
   const [batches, setBatches] = useState<Batch[]>([]);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -58,7 +59,9 @@ function AdminContributionsContent() {
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await api.postForm<UploadResult>(`/api/admin/contributions/upload?periodMonth=${encodeURIComponent(periodMonth)}`, form);
+        const mainContribution = !isIos;
+        const res = await api.postForm<UploadResult>(
+          `/api/admin/contributions/upload?periodMonth=${encodeURIComponent(periodMonth)}&mainContribution=${mainContribution}`, form);
         setResult(res);
         setPeriodMonth("");
         if (fileRef.current) fileRef.current.value = "";
@@ -93,7 +96,7 @@ function AdminContributionsContent() {
         <code className="bg-[var(--maroon-light)] text-[var(--maroon-dark)] px-1.5 py-0.5 rounded">REGNO</code>,{" "}
         <code className="bg-[var(--maroon-light)] text-[var(--maroon-dark)] px-1.5 py-0.5 rounded">NAME</code>,{" "}
         <code className="bg-[var(--maroon-light)] text-[var(--maroon-dark)] px-1.5 py-0.5 rounded">AMOUNT</code>, and{" "}
-        <code className="bg-[var(--maroon-light)] text-[var(--maroon-dark)] px-1.5 py-0.5 rounded">KIND</code> - SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, or REFUND OF OVER DEDUCTION (default SAVINGS).
+        <code className="bg-[var(--maroon-light)] text-[var(--maroon-dark)] px-1.5 py-0.5 rounded">KIND</code> - SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, REFUND OF OVER DEDUCTION, IOS1, or IOS2 (default SAVINGS).
       </p>
       <a href={apiUrl("/api/admin/contributions/template.xlsx")} className="text-[var(--maroon)] hover:underline text-sm font-medium">
         Download empty template (Excel)
@@ -101,14 +104,35 @@ function AdminContributionsContent() {
 
       <form onSubmit={onSubmit} className="card p-6 space-y-4 max-w-lg">
         <div>
+          <label className="field-label">IOS?</label>
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="radio" name="isIos" checked={!isIos} onChange={() => setIsIos(false)} />
+              No - regular monthly contribution
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" name="isIos" checked={isIos} onChange={() => setIsIos(true)} />
+              Yes - IOS1, IOS2, Cash Deposit, or Refund
+            </label>
+          </div>
+          <p className="text-xs text-[var(--muted)] mt-1">
+            {isIos
+              ? "This won't lock the period - it can be uploaded any number of times, even for a period that already has its main contribution posted."
+              : "This locks the period against a double-upload, same as before."}
+          </p>
+        </div>
+        <div>
           <label className="field-label">Period (month-end)</label>
           <select value={periodMonth} onChange={(e) => setPeriodMonth(e.target.value)} required className="field-input">
             <option value="">Select...</option>
-            {options.map((o) => (
-              <option key={o.value} value={o.value} disabled={uploadedPeriods.has(o.value)}>
-                {o.label}{uploadedPeriods.has(o.value) ? " (already uploaded)" : ""}
-              </option>
-            ))}
+            {options.map((o) => {
+              const locked = !isIos && uploadedPeriods.has(o.value);
+              return (
+                <option key={o.value} value={o.value} disabled={locked}>
+                  {o.label}{locked ? " (already uploaded)" : ""}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div>
@@ -132,7 +156,12 @@ function AdminContributionsContent() {
           {batches.map((b) => (
             <div key={b.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p className="font-semibold text-[var(--ink)]">{b.periodMonth} &middot; {b.fileName ?? "(no file name)"}</p>
+                <p className="font-semibold text-[var(--ink)] flex items-center gap-2">
+                  {b.periodMonth} &middot; {b.fileName ?? "(no file name)"}
+                  <span className={`badge ${b.locksPeriod ? "badge-grey" : "badge-gold"}`}>
+                    {b.locksPeriod ? "Locks period" : "IOS / Correction"}
+                  </span>
+                </p>
                 <p className="text-sm text-[var(--muted)]">
                   {b.matchedRows}/{b.totalRows} rows matched &middot; {formatNaira(b.totalAmount)} &middot; uploaded {b.uploadedAt.slice(0, 10)}
                 </p>

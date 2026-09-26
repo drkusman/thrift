@@ -55,4 +55,16 @@ public class LedgerService {
         }
         return balance;
     }
+
+    /** Interest-on-savings credited (IOS1) minus what's already been paid out (IOS2) - the member's
+     *  outstanding unpaid IOS, summed over their entire history regardless of fiscal year, since an
+     *  unclaimed IOS1 credit from a prior year is still owed today. */
+    public long unpaidIos(Long memberId) {
+        long balance = 0;
+        for (LedgerEntry e : ledgerEntryRepository.findByMemberIdOrderByDateDesc(memberId)) {
+            if ("IOS1".equals(e.getTransType()) && e.getDrCrStatus() == DrCr.CR) balance += e.getAmount();
+            else if ("IOS2".equals(e.getTransType()) && e.getDrCrStatus() == DrCr.DR) balance -= e.getAmount();
+        }
+        return balance;
+    }
 }
