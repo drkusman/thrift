@@ -8,8 +8,11 @@ import ng.asuu.thrift.domain.LoanLiquidation;
 import ng.asuu.thrift.domain.LoanRepaymentSchedule;
 import ng.asuu.thrift.domain.LoanRepaymentSchedule.ScheduleStatus;
 import ng.asuu.thrift.domain.LoanStatus;
+import ng.asuu.thrift.domain.LoanLiquidationRequest;
+import ng.asuu.thrift.domain.LoanLiquidationRequest.RequestStatus;
 import ng.asuu.thrift.domain.Member;
 import ng.asuu.thrift.repo.LoanLiquidationRepository;
+import ng.asuu.thrift.repo.LoanLiquidationRequestRepository;
 import ng.asuu.thrift.repo.LoanRepaymentScheduleRepository;
 import ng.asuu.thrift.repo.LoanRepository;
 import org.springframework.http.HttpStatus;
@@ -42,19 +45,26 @@ import java.util.List;
 @Service
 public class LoanLiquidationService {
     private static final long ADMIN_FEE = 1000;
+    /** A member's savings can never be fully drained by a liquidation - this much always stays behind,
+     *  same floor as the minimum monthly savings amount elsewhere in the app. Karim's own rule: "member
+     *  with 100,000 total savings can only enjoy liquidation + admin fees to the tune of 80,000." */
+    private static final long MINIMUM_RETAINED_SAVINGS = 20000;
 
     private final LoanRepository loanRepository;
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanLiquidationRepository liquidationRepository;
+    private final LoanLiquidationRequestRepository requestRepository;
     private final LedgerService ledgerService;
     private final LoanService loanService;
 
     public LoanLiquidationService(LoanRepository loanRepository, LoanRepaymentScheduleRepository scheduleRepository,
-                                   LoanLiquidationRepository liquidationRepository, LedgerService ledgerService,
+                                   LoanLiquidationRepository liquidationRepository,
+                                   LoanLiquidationRequestRepository requestRepository, LedgerService ledgerService,
                                    LoanService loanService) {
         this.loanRepository = loanRepository;
         this.scheduleRepository = scheduleRepository;
         this.liquidationRepository = liquidationRepository;
+        this.requestRepository = requestRepository;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
     }
@@ -62,8 +72,8 @@ public class LoanLiquidationService {
     /** A read-only preview so the admin sees exactly what a liquidation will do (the recalculated monthly
      *  repayment, whether it closes the loan, whether savings can cover it) before committing to it. */
     public record Preview(long currentBalance, long amount, long adminFee, boolean fullLiquidation, long newBalance,
-                           long savingsBalance, boolean sufficientSavings, Integer remainingInstallments,
-                           Long proposedMonthlyRepayment) {}
+                           long savingsBalance, long minimumRetainedSavings, long maxLiquidatable,
+                           boolean sufficientSavings, Integer remainingInstallments, Long proposedMonthlyRepayment) {}
 
     public Preview preview(Long loanId, long amount) {
         Loan loan = requireLiquidatable(loanId);
@@ -72,7 +82,8 @@ public class LoanLiquidationService {
         long newBalance = balance - amount;
         boolean full = newBalance <= 0;
         long savingsBalance = ledgerService.savingsBalance(loan.getMemberId());
-        boolean sufficient = savingsBalance >= amount + ADMIN_FEE;
+        boolean sufficient = savingsAfter(savingsBalance, amount) >= MINIMUM_RETAINED_SAVINGS;
+        long maxLiquidatable = Math.max(0, savingsBalance - MINIMUM_RETAINED_SAVINGS - ADMIN_FEE);
 
         Integer remainingCount = null;
         Long proposedMonthly = null;
@@ -83,21 +94,27 @@ public class LoanLiquidationService {
                 proposedMonthly = Math.floorDiv(newBalance, remainingCount);
             }
         }
-        return new Preview(balance, amount, ADMIN_FEE, full, Math.max(newBalance, 0), savingsBalance, sufficient,
-                remainingCount, proposedMonthly);
+        return new Preview(balance, amount, ADMIN_FEE, full, Math.max(newBalance, 0), savingsBalance,
+                MINIMUM_RETAINED_SAVINGS, maxLiquidatable, sufficient, remainingCount, proposedMonthly);
+    }
+
+    private static long savingsAfter(long savingsBalance, long amount) {
+        return savingsBalance - amount - ADMIN_FEE;
     }
 
     @Transactional
-    public Loan liquidate(Member admin, Long loanId, long amount) {
+    public LoanLiquidation liquidate(Member admin, Long loanId, long amount) {
         Loan loan = requireLiquidatable(loanId);
         long balance = loanService.balanceFor(loanId);
         validateAmount(amount, balance);
 
         long savingsBalance = ledgerService.savingsBalance(loan.getMemberId());
-        if (savingsBalance < amount + ADMIN_FEE) {
+        if (savingsAfter(savingsBalance, amount) < MINIMUM_RETAINED_SAVINGS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Insufficient savings balance - liquidating " + amount + " plus the " + ADMIN_FEE +
-                    " admin fee needs " + (amount + ADMIN_FEE) + ", but savings only has " + savingsBalance);
+                    "This would leave savings below the " + MINIMUM_RETAINED_SAVINGS + " minimum a member must " +
+                    "always retain - liquidating " + amount + " plus the " + ADMIN_FEE + " admin fee needs " +
+                    (amount + ADMIN_FEE + MINIMUM_RETAINED_SAVINGS) + " kept in savings, but savings only has " +
+                    savingsBalance);
         }
 
         LocalDate today = LocalDate.now();
@@ -144,21 +161,92 @@ public class LoanLiquidationService {
             }
         }
 
-        LoanLiquidation record = new LoanLiquidation();
-        record.setLoanId(loanId);
-        record.setMemberId(loan.getMemberId());
-        record.setAmount(amount);
-        record.setAdminFee(ADMIN_FEE);
-        record.setFullLiquidation(full);
-        record.setOldMonthlyRepaymentAmount(oldMonthly);
-        record.setNewMonthlyRepaymentAmount(newMonthly);
-        record.setSavingsLedgerEntryId(savingsEntry.getId());
-        record.setFeeLedgerEntryId(feeEntry.getId());
-        record.setLoanLedgerEntryId(loanEntry.getId());
-        record.setPerformedBy(admin.getId());
-        liquidationRepository.save(record);
+        LoanLiquidation audit = new LoanLiquidation();
+        audit.setLoanId(loanId);
+        audit.setMemberId(loan.getMemberId());
+        audit.setAmount(amount);
+        audit.setAdminFee(ADMIN_FEE);
+        audit.setFullLiquidation(full);
+        audit.setOldMonthlyRepaymentAmount(oldMonthly);
+        audit.setNewMonthlyRepaymentAmount(newMonthly);
+        audit.setSavingsLedgerEntryId(savingsEntry.getId());
+        audit.setFeeLedgerEntryId(feeEntry.getId());
+        audit.setLoanLedgerEntryId(loanEntry.getId());
+        audit.setPerformedBy(admin.getId());
+        return liquidationRepository.save(audit);
+    }
 
-        return loan;
+    /** Every unpaid-loan-balance-covering-in-full-or-part request a member has filed for themselves,
+     *  newest first. */
+    public List<LoanLiquidationRequest> requestsForMember(Long memberId) {
+        return requestRepository.findByMemberIdOrderByRequestedAtDesc(memberId);
+    }
+
+    public List<LoanLiquidationRequest> pendingRequests() {
+        return requestRepository.findByStatusOrderByRequestedAtAsc(RequestStatus.PENDING);
+    }
+
+    /** A member applying to liquidate their own loan - sanity-checked the same way an admin's direct
+     *  liquidation is (amount within balance, savings can cover it), but not yet posted: approve() does
+     *  that, re-validating fresh in case the balance or savings moved between request and decision. */
+    @Transactional
+    public LoanLiquidationRequest apply(Member member, Long loanId, long amount) {
+        Loan loan = requireLiquidatable(loanId);
+        if (!loan.getMemberId().equals(member.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This is not your loan");
+        }
+        if (!requestRepository.findByLoanIdAndStatus(loanId, RequestStatus.PENDING).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This loan already has a liquidation request awaiting a decision");
+        }
+        long balance = loanService.balanceFor(loanId);
+        validateAmount(amount, balance);
+        long savingsBalance = ledgerService.savingsBalance(member.getId());
+        if (savingsAfter(savingsBalance, amount) < MINIMUM_RETAINED_SAVINGS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This would leave your savings below the " + MINIMUM_RETAINED_SAVINGS + " minimum you must " +
+                    "always retain");
+        }
+
+        LoanLiquidationRequest req = new LoanLiquidationRequest();
+        req.setLoanId(loanId);
+        req.setMemberId(member.getId());
+        req.setRequestedAmount(amount);
+        return requestRepository.save(req);
+    }
+
+    /** Approving actually runs the liquidation (posting the same three ledger entries and revising the
+     *  schedule an admin's own direct liquidation would) - the request is just what triggered it. */
+    @Transactional
+    public LoanLiquidationRequest approve(Member admin, Long requestId) {
+        LoanLiquidationRequest req = requireRequest(requestId);
+        if (req.getStatus() != RequestStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Request already decided");
+        }
+        LoanLiquidation audit = liquidate(admin, req.getLoanId(), req.getRequestedAmount());
+        req.setStatus(RequestStatus.APPROVED);
+        req.setDecidedBy(admin.getId());
+        req.setDecidedAt(LocalDateTime.now(ZoneOffset.UTC));
+        req.setLoanLiquidationId(audit.getId());
+        return requestRepository.save(req);
+    }
+
+    @Transactional
+    public LoanLiquidationRequest reject(Member admin, Long requestId, String note) {
+        LoanLiquidationRequest req = requireRequest(requestId);
+        if (req.getStatus() != RequestStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Request already decided");
+        }
+        req.setStatus(RequestStatus.REJECTED);
+        req.setDecidedBy(admin.getId());
+        req.setDecidedAt(LocalDateTime.now(ZoneOffset.UTC));
+        req.setDecisionNote(note);
+        return requestRepository.save(req);
+    }
+
+    private LoanLiquidationRequest requireRequest(Long id) {
+        return requestRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Request not found"));
     }
 
     private List<LoanRepaymentSchedule> remainingInstallments(Long loanId) {

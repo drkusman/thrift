@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { Loan, LoanType, MemberOption, ScheduleRow } from "@/lib/types";
+import { Loan, LoanLiquidationRequest, LoanType, MemberOption, ScheduleRow } from "@/lib/types";
 import { formatNaira, statusBadgeClass, loanTypeAmountRangeLabel } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 import { MemberSearchSelect } from "@/components/MemberSearchSelect";
+import { LiquidationRequestForm } from "@/components/LiquidationRequestForm";
 
 function GuarantorRow({
   loan, slot, memberOptions, onChanged,
@@ -82,9 +83,12 @@ function LoansContent() {
   const [submitting, setSubmitting] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
+  const [liquidationRequests, setLiquidationRequests] = useState<LoanLiquidationRequest[]>([]);
+  const [requestingLoanId, setRequestingLoanId] = useState<number | null>(null);
 
   function load() {
     api.get<Loan[]>("/api/me/loans").then(setLoans);
+    api.get<LoanLiquidationRequest[]>("/api/me/loan-liquidation-requests").then(setLiquidationRequests);
   }
 
   useEffect(() => {
@@ -92,6 +96,10 @@ function LoansContent() {
     api.get<MemberOption[]>("/api/members/active").then(setActiveMembers);
     load();
   }, []);
+
+  function pendingRequestFor(loanId: number) {
+    return liquidationRequests.find((r) => r.loanId === loanId && r.status === "PENDING");
+  }
 
   const selectedType = loanTypes.find((t) => t.id === loanTypeId);
 
@@ -253,6 +261,11 @@ function LoansContent() {
                       {expanded === l.id ? "Hide schedule" : "View schedule"}
                     </button>
                   )}
+                  {l.status === "RUNNING" && (l.balance ?? 0) > 0 && !pendingRequestFor(l.id) && requestingLoanId !== l.id && (
+                    <button onClick={() => setRequestingLoanId(l.id)} className="block mt-1 text-[var(--maroon)] hover:underline text-xs font-medium">
+                      Request liquidation
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -264,6 +277,20 @@ function LoansContent() {
                   <GuarantorRow loan={l} slot={1} memberOptions={activeMembers} onChanged={load} />
                   <GuarantorRow loan={l} slot={2} memberOptions={activeMembers} onChanged={load} />
                 </div>
+              )}
+
+              {pendingRequestFor(l.id) && (
+                <p className="text-xs text-[var(--maroon-dark)] font-medium">
+                  Liquidation of {formatNaira(pendingRequestFor(l.id)!.requestedAmount)} requested {pendingRequestFor(l.id)!.requestedAt.slice(0, 10)} - awaiting admin approval.
+                </p>
+              )}
+
+              {requestingLoanId === l.id && (
+                <LiquidationRequestForm
+                  loan={l}
+                  onCancel={() => setRequestingLoanId(null)}
+                  onDone={() => { setRequestingLoanId(null); load(); }}
+                />
               )}
 
               {expanded === l.id && (

@@ -58,7 +58,8 @@ export function LiquidatePanel({ loan, member, onDone, onCancel }: {
       <p className="text-sm text-[var(--muted)]">
         Outstanding balance: {formatNaira(loan.balance ?? 0)}. Enter the full balance for a full liquidation
         (closes the loan), or a smaller amount to partially liquidate - the remaining repayment plan is
-        recalculated automatically. A flat {formatNaira(1000)} admin fee is also deducted from savings.
+        recalculated automatically. A flat {formatNaira(1000)} admin fee is also deducted from savings, and
+        savings can never be drawn down below a {formatNaira(20000)} minimum.
       </p>
       <div>
         <label className="field-label">Liquidation amount</label>
@@ -72,7 +73,10 @@ export function LiquidatePanel({ loan, member, onDone, onCancel }: {
         <div className="p-3 rounded-lg bg-[var(--maroon-light)]/40 text-sm space-y-1">
           <p>Deducted from savings: <strong>{formatNaira(preview.amount + preview.adminFee)}</strong> ({formatNaira(preview.amount)} liquidation + {formatNaira(preview.adminFee)} fee)</p>
           <p>Member&rsquo;s savings balance: {formatNaira(preview.savingsBalance)}{!preview.sufficientSavings && (
-            <span className="text-[var(--danger,#b91c1c)] font-semibold"> - insufficient to cover this</span>
+            <span className="text-[var(--danger,#b91c1c)] font-semibold">
+              {" "}- would leave savings below the {formatNaira(preview.minimumRetainedSavings)} minimum
+              (at most {formatNaira(preview.maxLiquidatable)} can be liquidated here)
+            </span>
           )}</p>
           {preview.fullLiquidation ? (
             <p className="font-semibold text-[var(--maroon-dark)]">This fully settles the loan - it will be marked COMPLETED.</p>

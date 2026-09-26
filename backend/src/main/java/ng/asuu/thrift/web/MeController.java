@@ -20,15 +20,18 @@ public class MeController {
     private final LoanService loanService;
     private final SavingsService savingsService;
     private final IosPayoutService iosPayoutService;
+    private final LoanLiquidationService loanLiquidationService;
     private final TransactionExportService exportService;
 
     public MeController(MemberService memberService, LedgerService ledgerService, LoanService loanService,
-                         SavingsService savingsService, IosPayoutService iosPayoutService, TransactionExportService exportService) {
+                         SavingsService savingsService, IosPayoutService iosPayoutService,
+                         LoanLiquidationService loanLiquidationService, TransactionExportService exportService) {
         this.memberService = memberService;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
         this.savingsService = savingsService;
         this.iosPayoutService = iosPayoutService;
+        this.loanLiquidationService = loanLiquidationService;
         this.exportService = exportService;
     }
 
@@ -109,6 +112,31 @@ public class MeController {
         }
         return loanService.scheduleFor(loanId).stream().map(ScheduleDto::of).toList();
     }
+
+    @GetMapping("/loans/{loanId}/liquidation-preview")
+    public LiquidationPreviewDto liquidationPreview(@AuthenticationPrincipal MemberPrincipal principal, @PathVariable Long loanId, @RequestParam long amount) {
+        requireOwnLoan(principal, loanId);
+        return LiquidationPreviewDto.of(loanLiquidationService.preview(loanId, amount));
+    }
+
+    @GetMapping("/loan-liquidation-requests")
+    public List<LoanLiquidationRequestDto> loanLiquidationRequests(@AuthenticationPrincipal MemberPrincipal principal) {
+        return loanLiquidationService.requestsForMember(principal.getMember().getId()).stream().map(LoanLiquidationRequestDto::of).toList();
+    }
+
+    @PostMapping("/loans/{loanId}/liquidation-requests")
+    public LoanLiquidationRequestDto applyForLiquidation(@AuthenticationPrincipal MemberPrincipal principal, @PathVariable Long loanId, @RequestBody ApplyLiquidationRequest req) {
+        return LoanLiquidationRequestDto.of(loanLiquidationService.apply(principal.getMember(), loanId, req.amount()));
+    }
+
+    private void requireOwnLoan(MemberPrincipal principal, Long loanId) {
+        var loan = loanService.require(loanId);
+        if (!loan.getMemberId().equals(principal.getMember().getId())) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        }
+    }
+
+    public record ApplyLiquidationRequest(long amount) {}
 
     @GetMapping("/savings-requests")
     public List<SavingsRequestDto> savingsRequests(@AuthenticationPrincipal MemberPrincipal principal) {

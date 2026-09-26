@@ -62,6 +62,8 @@ export type LiquidationPreview = {
   fullLiquidation: boolean;
   newBalance: number;
   savingsBalance: number;
+  minimumRetainedSavings: number;
+  maxLiquidatable: number;
   sufficientSavings: boolean;
   remainingInstallments: number | null;
   proposedMonthlyRepayment: number | null;
@@ -111,6 +113,16 @@ export type SavingsRequest = {
   requestedAmount: number;
   status: "PENDING" | "APPROVED" | "REJECTED";
   requestedAt: string;
+};
+
+export type LoanLiquidationRequest = {
+  id: number;
+  loanId: number;
+  memberId: number;
+  requestedAmount: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt: string;
+  decisionNote: string | null;
 };
 
 export type IosPayoutRequest = {

@@ -2,6 +2,7 @@ package ng.asuu.thrift.web;
 
 import jakarta.validation.Valid;
 import ng.asuu.thrift.domain.Loan;
+import ng.asuu.thrift.domain.LoanLiquidation;
 import ng.asuu.thrift.domain.LoanStatus;
 import ng.asuu.thrift.domain.LoanType;
 import ng.asuu.thrift.domain.Member;
@@ -21,6 +22,7 @@ import ng.asuu.thrift.web.dto.LedgerEntryDto;
 import ng.asuu.thrift.web.dto.LiquidateLoanRequest;
 import ng.asuu.thrift.web.dto.LiquidationPreviewDto;
 import ng.asuu.thrift.web.dto.LoanDto;
+import ng.asuu.thrift.web.dto.LoanLiquidationRequestDto;
 import ng.asuu.thrift.web.dto.ScheduleDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -170,8 +172,24 @@ public class AdminLoanController {
 
     @PostMapping("/{id}/liquidate")
     public LoanDto liquidate(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id, @RequestBody LiquidateLoanRequest req) {
-        Loan loan = loanLiquidationService.liquidate(admin.getMember(), id, req.amount());
+        LoanLiquidation audit = loanLiquidationService.liquidate(admin.getMember(), id, req.amount());
+        Loan loan = loanService.require(audit.getLoanId());
         return LoanDto.of(loan, loanService.balanceFor(loan.getId()));
+    }
+
+    @GetMapping("/liquidation-requests/pending")
+    public List<LoanLiquidationRequestDto> pendingLiquidationRequests() {
+        return loanLiquidationService.pendingRequests().stream().map(LoanLiquidationRequestDto::of).toList();
+    }
+
+    @PostMapping("/liquidation-requests/{id}/approve")
+    public LoanLiquidationRequestDto approveLiquidationRequest(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id) {
+        return LoanLiquidationRequestDto.of(loanLiquidationService.approve(admin.getMember(), id));
+    }
+
+    @PostMapping("/liquidation-requests/{id}/reject")
+    public LoanLiquidationRequestDto rejectLiquidationRequest(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id, @RequestBody(required = false) DecisionRequest req) {
+        return LoanLiquidationRequestDto.of(loanLiquidationService.reject(admin.getMember(), id, req == null ? null : req.note()));
     }
 
     @GetMapping("/{id}/transactions")
