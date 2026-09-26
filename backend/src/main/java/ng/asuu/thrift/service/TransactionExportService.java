@@ -3,6 +3,7 @@ package ng.asuu.thrift.service;
 import ng.asuu.thrift.domain.LedgerEntry;
 import ng.asuu.thrift.domain.LedgerEntry.DrCr;
 import ng.asuu.thrift.domain.LedgerEntry.TransCat;
+import ng.asuu.thrift.domain.Loan;
 import ng.asuu.thrift.domain.Member;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -62,6 +63,35 @@ public class TransactionExportService {
             wb.write(out);
             return out.toByteArray();
         }
+    }
+
+    /** A single loan's own statement - unlike the member-wide toExcel/toPdf above, there's no
+     *  Savings/Loan split to make since every entry here is already scoped to one loan. */
+    public byte[] toExcelForLoan(Member member, Loan loan, List<LedgerEntry> entries) throws IOException {
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            int pictureIdx = wb.addPicture(logoBytes, Workbook.PICTURE_TYPE_JPEG);
+            writeSheet(wb, pictureIdx, member, sheetLabel(loan), sortedAscending(entries));
+            wb.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    public byte[] toPdfForLoan(Member member, Loan loan, List<LedgerEntry> entries) throws IOException {
+        try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDImageXObject logo = PDImageXObject.createFromByteArray(doc, logoBytes, "logo");
+            PdfCursor cursor = new PdfCursor(doc, logo);
+            cursor.sectionHeading("Loan Statement - " + sheetLabel(loan), member);
+            cursor.table(sortedAscending(entries));
+            cursor.close();
+            doc.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    private static String sheetLabel(Loan loan) {
+        String label = loan.getLoanCode() != null ? loan.getLoanCode() : "Loan " + loan.getId();
+        label = label.replaceAll("[\\\\/*\\[\\]:?]", "-");
+        return label.length() > 31 ? label.substring(0, 31) : label;
     }
 
     private void writeSheet(XSSFWorkbook wb, int pictureIdx, Member member, String sheetName, List<LedgerEntry> entries) {

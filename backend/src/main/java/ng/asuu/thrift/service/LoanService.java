@@ -310,6 +310,29 @@ public class LoanService {
         return loanRepository.save(loan);
     }
 
+    /** Pauses a running loan's monthly deduction (the SAVINGS waterfall and activeMonthlyRepayment both
+     *  only ever look at RUNNING loans, so a PULSED one is simply skipped every period) without touching
+     *  its balance, schedule, or monthly repayment figure - resume() below just flips it back. */
+    @Transactional
+    public Loan pulse(Long loanId) {
+        Loan loan = require(loanId);
+        if (loan.getStatus() != LoanStatus.RUNNING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a running loan can be pulsed");
+        }
+        loan.setStatus(LoanStatus.PULSED);
+        return loanRepository.save(loan);
+    }
+
+    @Transactional
+    public Loan resume(Long loanId) {
+        Loan loan = require(loanId);
+        if (loan.getStatus() != LoanStatus.PULSED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a pulsed loan can be resumed");
+        }
+        loan.setStatus(LoanStatus.RUNNING);
+        return loanRepository.save(loan);
+    }
+
     /** The member's total monthly repayment obligation, summed across every RUNNING loan - a member can
      *  have more than one at once, and each contributes to the deduction. PULSED and COMPLETED loans
      *  are excluded entirely: a pulsed loan isn't currently being deducted, and a completed one has

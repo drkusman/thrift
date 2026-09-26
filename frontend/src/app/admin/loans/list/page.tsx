@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
+import { LiquidatePanel } from "@/components/LiquidatePanel";
 import { api, apiUrl, ApiError } from "@/lib/api";
 import { Loan, LoanType, Member } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
@@ -17,6 +18,7 @@ function AdminLoanListContent() {
   const [loanTypesById, setLoanTypesById] = useState<Record<number, LoanType>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [liquidatingLoan, setLiquidatingLoan] = useState<Loan | null>(null);
 
   useEffect(() => {
     api.get<Member[]>("/api/admin/members").then((rows) => {
@@ -27,14 +29,16 @@ function AdminLoanListContent() {
     });
   }, []);
 
-  useEffect(() => {
+  function load() {
     setError(null);
     setLoading(true);
     api.get<Loan[]>(`/api/admin/loans/by-status?status=${status}`)
       .then(setLoans)
       .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load loans."))
       .finally(() => setLoading(false));
-  }, [status]);
+  }
+
+  useEffect(load, [status]);
 
   const exportQuery = `status=${status}`;
 
@@ -66,6 +70,15 @@ function AdminLoanListContent() {
 
       {error && <p className="alert-error max-w-md">{error}</p>}
 
+      {liquidatingLoan && (
+        <LiquidatePanel
+          loan={liquidatingLoan}
+          member={members[liquidatingLoan.memberId]}
+          onCancel={() => setLiquidatingLoan(null)}
+          onDone={() => { setLiquidatingLoan(null); load(); }}
+        />
+      )}
+
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -78,6 +91,7 @@ function AdminLoanListContent() {
               <th className="p-3 text-right">Balance</th>
               <th className="p-3">Status</th>
               <th className="p-3">Applied</th>
+              <th className="p-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--line)]">
@@ -94,11 +108,18 @@ function AdminLoanListContent() {
                   <td className="p-3 text-right">{formatNaira(l.balance)}</td>
                   <td className="p-3"><span className={statusBadgeClass(l.status)}>{l.status}</span></td>
                   <td className="p-3">{l.appliedAt?.slice(0, 10) ?? "-"}</td>
+                  <td className="p-3">
+                    {l.status === "RUNNING" && (l.balance ?? 0) > 0 && (
+                      <button onClick={() => setLiquidatingLoan(l)} className="text-[var(--maroon)] hover:underline text-xs font-medium">
+                        Liquidate
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {!loading && loans.length === 0 && (
-              <tr><td colSpan={8} className="p-4 text-center text-[var(--muted)]">No {status.toLowerCase()} loans.</td></tr>
+              <tr><td colSpan={9} className="p-4 text-center text-[var(--muted)]">No {status.toLowerCase()} loans.</td></tr>
             )}
           </tbody>
         </table>

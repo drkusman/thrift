@@ -30,6 +30,7 @@ const STAFF_LINKS = [
       { href: "/admin/loans", label: "Loan Approval" },
       { href: "/admin/remittance", label: "Monthly Remittance" },
       { href: "/admin/loans/list", label: "Loan List" },
+      { href: "/admin/loans/manager", label: "Loan Manager" },
       { href: "/admin/contributions", label: "Monthly Upload" },
     ],
   },

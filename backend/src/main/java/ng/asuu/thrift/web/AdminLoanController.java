@@ -6,14 +6,20 @@ import ng.asuu.thrift.domain.LoanStatus;
 import ng.asuu.thrift.domain.LoanType;
 import ng.asuu.thrift.domain.Member;
 import ng.asuu.thrift.security.MemberPrincipal;
+import ng.asuu.thrift.service.LedgerService;
 import ng.asuu.thrift.service.LoanBatchApplicationService;
 import ng.asuu.thrift.service.LoanExportService;
 import ng.asuu.thrift.service.LoanListExportService;
+import ng.asuu.thrift.service.LoanLiquidationService;
 import ng.asuu.thrift.service.LoanService;
 import ng.asuu.thrift.service.LoanTypeService;
 import ng.asuu.thrift.service.MemberService;
+import ng.asuu.thrift.service.TransactionExportService;
 import ng.asuu.thrift.web.dto.AdminLoanApplicationRequest;
 import ng.asuu.thrift.web.dto.DecisionRequest;
+import ng.asuu.thrift.web.dto.LedgerEntryDto;
+import ng.asuu.thrift.web.dto.LiquidateLoanRequest;
+import ng.asuu.thrift.web.dto.LiquidationPreviewDto;
 import ng.asuu.thrift.web.dto.LoanDto;
 import ng.asuu.thrift.web.dto.ScheduleDto;
 import org.springframework.http.ResponseEntity;
@@ -36,17 +42,26 @@ public class AdminLoanController {
     private final LoanExportService loanExportService;
     private final LoanListExportService loanListExportService;
     private final LoanBatchApplicationService loanBatchApplicationService;
+    private final LoanLiquidationService loanLiquidationService;
+    private final LedgerService ledgerService;
+    private final TransactionExportService transactionExportService;
 
     public AdminLoanController(LoanService loanService, LoanTypeService loanTypeService,
                                 MemberService memberService, LoanExportService loanExportService,
                                 LoanListExportService loanListExportService,
-                                LoanBatchApplicationService loanBatchApplicationService) {
+                                LoanBatchApplicationService loanBatchApplicationService,
+                                LoanLiquidationService loanLiquidationService,
+                                LedgerService ledgerService,
+                                TransactionExportService transactionExportService) {
         this.loanService = loanService;
         this.loanTypeService = loanTypeService;
         this.memberService = memberService;
         this.loanExportService = loanExportService;
         this.loanListExportService = loanListExportService;
         this.loanBatchApplicationService = loanBatchApplicationService;
+        this.loanLiquidationService = loanLiquidationService;
+        this.ledgerService = ledgerService;
+        this.transactionExportService = transactionExportService;
     }
 
     @GetMapping("/pending")
@@ -56,7 +71,9 @@ public class AdminLoanController {
 
     @GetMapping("/member/{memberId}")
     public List<LoanDto> forMember(@PathVariable Long memberId) {
-        return loanService.forMember(memberId).stream().map(LoanDto::of).toList();
+        return loanService.forMember(memberId).stream()
+                .map(l -> LoanDto.of(l, loanService.balanceFor(l.getId())))
+                .toList();
     }
 
     @GetMapping("/{id}/schedule")
@@ -134,5 +151,47 @@ public class AdminLoanController {
     @PostMapping("/{id}/reject")
     public LoanDto reject(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id, @RequestBody(required = false) DecisionRequest req) {
         return LoanDto.of(loanService.reject(admin.getMember(), id, req == null ? null : req.note()));
+    }
+
+    @PostMapping("/{id}/pulse")
+    public LoanDto pulse(@PathVariable Long id) {
+        return LoanDto.of(loanService.pulse(id));
+    }
+
+    @PostMapping("/{id}/resume")
+    public LoanDto resume(@PathVariable Long id) {
+        return LoanDto.of(loanService.resume(id));
+    }
+
+    @GetMapping("/{id}/liquidation-preview")
+    public LiquidationPreviewDto liquidationPreview(@PathVariable Long id, @RequestParam long amount) {
+        return LiquidationPreviewDto.of(loanLiquidationService.preview(id, amount));
+    }
+
+    @PostMapping("/{id}/liquidate")
+    public LoanDto liquidate(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id, @RequestBody LiquidateLoanRequest req) {
+        Loan loan = loanLiquidationService.liquidate(admin.getMember(), id, req.amount());
+        return LoanDto.of(loan, loanService.balanceFor(loan.getId()));
+    }
+
+    @GetMapping("/{id}/transactions")
+    public List<LedgerEntryDto> transactions(@PathVariable Long id) {
+        return ledgerService.forLoan(id).stream().map(LedgerEntryDto::of).toList();
+    }
+
+    @GetMapping("/{id}/transactions/export.xlsx")
+    public ResponseEntity<byte[]> transactionsExcel(@PathVariable Long id) throws IOException {
+        Loan loan = loanService.require(id);
+        Member member = memberService.require(loan.getMemberId());
+        byte[] bytes = transactionExportService.toExcelForLoan(member, loan, ledgerService.forLoan(id));
+        return FileDownload.excel(bytes, "loan-" + (loan.getLoanCode() != null ? loan.getLoanCode() : id) + "-transactions.xlsx");
+    }
+
+    @GetMapping("/{id}/transactions/export.pdf")
+    public ResponseEntity<byte[]> transactionsPdf(@PathVariable Long id) throws IOException {
+        Loan loan = loanService.require(id);
+        Member member = memberService.require(loan.getMemberId());
+        byte[] bytes = transactionExportService.toPdfForLoan(member, loan, ledgerService.forLoan(id));
+        return FileDownload.pdf(bytes, "loan-" + (loan.getLoanCode() != null ? loan.getLoanCode() : id) + "-transactions.pdf");
     }
 }

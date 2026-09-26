@@ -55,6 +55,18 @@ export type Loan = {
   guarantorTwoStatus: "PENDING" | "ACCEPTED" | "REJECTED";
 };
 
+export type LiquidationPreview = {
+  currentBalance: number;
+  amount: number;
+  adminFee: number;
+  fullLiquidation: boolean;
+  newBalance: number;
+  savingsBalance: number;
+  sufficientSavings: boolean;
+  remainingInstallments: number | null;
+  proposedMonthlyRepayment: number | null;
+};
+
 export type GuaranteeRequest = {
   loanId: number;
   loanCode: string | null;
