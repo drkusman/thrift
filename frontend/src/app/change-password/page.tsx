@@ -16,6 +16,7 @@ export default function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && !member) {
@@ -40,8 +41,11 @@ export default function ChangePasswordPage() {
       try {
         await api.post("/api/me/password", { currentPassword, newPassword });
         await refresh();
-        if (member?.role === "ADMIN" || member?.role === "FIN_SEC") router.push("/admin");
-        else router.push("/dashboard");
+        setSuccess(true);
+        setTimeout(() => {
+          if (member?.role === "ADMIN" || member?.role === "FIN_SEC") router.push("/admin");
+          else router.push("/dashboard");
+        }, 1200);
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Could not change password.");
       } finally {
@@ -65,21 +69,22 @@ export default function ChangePasswordPage() {
 
         <div>
           <label className="field-label">Current password</label>
-          <PasswordInput value={currentPassword} onChange={setCurrentPassword} required />
+          <PasswordInput value={currentPassword} onChange={setCurrentPassword} required disabled={success} />
         </div>
         <div>
           <label className="field-label">New password</label>
-          <PasswordInput value={newPassword} onChange={setNewPassword} minLength={6} required autoComplete="new-password" />
+          <PasswordInput value={newPassword} onChange={setNewPassword} minLength={6} required autoComplete="new-password" disabled={success} />
         </div>
         <div>
           <label className="field-label">Confirm new password</label>
-          <PasswordInput value={confirm} onChange={setConfirm} minLength={6} required autoComplete="new-password" />
+          <PasswordInput value={confirm} onChange={setConfirm} minLength={6} required autoComplete="new-password" disabled={success} />
         </div>
 
         {error && <p className="alert-error">{error}</p>}
+        {success && <p className="alert-success">Password changed successfully. Redirecting...</p>}
 
-        <button type="submit" disabled={submitting} className="btn btn-primary w-full">
-          {submitting ? "Saving..." : "Change password"}
+        <button type="submit" disabled={submitting || success} className="btn btn-primary w-full">
+          {success ? "Success" : submitting ? "Saving..." : "Change password"}
         </button>
 
         <p className="text-center text-sm text-[var(--muted)]">

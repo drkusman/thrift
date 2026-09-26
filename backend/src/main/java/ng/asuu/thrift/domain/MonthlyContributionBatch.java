@@ -17,4 +17,6 @@ public class MonthlyContributionBatch {
     @Column(name = "total_rows") private int totalRows;
     @Column(name = "matched_rows") private int matchedRows;
     @Column(name = "total_amount") private long totalAmount;
+    /** The original workbook as uploaded, so an admin can re-download exactly what was submitted. */
+    @Column(name = "file_bytes") private byte[] fileBytes;
 }

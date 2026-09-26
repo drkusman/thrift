@@ -29,6 +29,24 @@ public class AuthController {
         this.memberService = memberService;
     }
 
+    public record ForgotPasswordRequest(String regno, String resetBaseUrl) {}
+    public record ResetPasswordRequest(String token, String password) {}
+
+    @PostMapping("/forgot-password")
+    public MemberService.ResetRequestResult forgotPassword(@RequestBody ForgotPasswordRequest req) {
+        return memberService.requestPasswordReset(req.regno(), req.resetBaseUrl());
+    }
+
+    @GetMapping("/reset-token-valid")
+    public boolean resetTokenValid(@RequestParam String token) {
+        return memberService.isResetTokenValid(token);
+    }
+
+    @PostMapping("/reset-password")
+    public void resetPassword(@RequestBody ResetPasswordRequest req) {
+        memberService.resetPasswordWithToken(req.token(), req.password());
+    }
+
     @PostMapping("/login")
     public ResponseEntity<MemberView> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
         Authentication auth;

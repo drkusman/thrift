@@ -11,9 +11,10 @@ type Props = {
   autoFocus?: boolean;
   id?: string;
   autoComplete?: "current-password" | "new-password";
+  disabled?: boolean;
 };
 
-export function PasswordInput({ value, onChange, required, minLength, autoFocus, id, autoComplete = "current-password" }: Props) {
+export function PasswordInput({ value, onChange, required, minLength, autoFocus, id, autoComplete = "current-password", disabled }: Props) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -28,6 +29,7 @@ export function PasswordInput({ value, onChange, required, minLength, autoFocus,
         minLength={minLength}
         autoFocus={autoFocus}
         autoComplete={autoComplete}
+        disabled={disabled}
       />
       <button
         type="button"

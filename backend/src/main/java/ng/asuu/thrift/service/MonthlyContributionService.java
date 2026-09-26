@@ -7,60 +7,125 @@ import ng.asuu.thrift.domain.LedgerEntry.TransCat;
 import ng.asuu.thrift.domain.LoanRepaymentSchedule.ScheduleStatus;
 import ng.asuu.thrift.repo.*;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Admin uploads an Excel sheet of regno -> amount per month (savings, or loan repayments). Each row
- * is matched to a member and posted as a LedgerEntry; unmatched rows are recorded with an error so
- * the admin can see exactly what to fix and re-upload, same UX pattern as GAT's CSV import summaries.
- * Expected columns (header row, any order): regno, amount, kind ("SAVINGS" or "LOAN_REPAYMENT").
+ * Admin uploads an Excel sheet of regno -> amount per month. Each row is matched to a member; unmatched
+ * rows are recorded with an error so the admin can see exactly what to fix and re-upload, same UX
+ * pattern as GAT's CSV import summaries. Expected columns (header row, any order): regno, amount, kind.
+ * <p>
+ * KIND drives how a row is posted:
+ * <ul>
+ *   <li>LOAN_REPAYMENT - a single credit against TransCat.LOAN (transType LRPT), applied to the member's
+ *       oldest unpaid schedule installment if one exists.
+ *   <li>CASH (or DEPOSIT, CASH DEPOSIT) - a single savings credit, transType MSVG3.
+ *   <li>REFUND (or OVER DEDUCTION, REFUND OF OVER DEDUCTION) - a single savings credit, transType MSVG2 -
+ *       same code the SAVINGS waterfall below uses for its own leftover, but postable on its own too
+ *       (e.g. a manual correction unrelated to that month's savings lump sum).
+ *   <li>Anything else (including SAVINGS, or a blank cell) - the complex case: the amount is a single
+ *       lump sum that pays the member's own standing monthly savings first, then whatever's left is
+ *       applied one loan at a time (oldest disbursed first) to each RUNNING loan's own repayment plan,
+ *       capped at that loan's remaining balance - until either every loan is covered or the money runs
+ *       out. Whichever loan the money runs out on gets a partial payment; every loan after it in the
+ *       order gets nothing this period. Money left over after every running loan is fully covered is
+ *       posted back to the member as a Refund of Over Deduction (transType MSVG2).
+ * </ul>
+ * KIND nomenclature isn't consistent across uploads, so recognition is case-insensitive and tolerant of
+ * the shorter variants above rather than requiring the exact canonical phrase.
  */
 @Service
 public class MonthlyContributionService {
+    /** Admin's free-text KIND column, upper-cased and trimmed, mapped onto a single canonical code -
+     *  the nomenclature isn't consistent across uploads, so every variant seen in practice is accepted. */
+    private static final Set<String> CASH_DEPOSIT_KINDS = Set.of("CASH", "DEPOSIT", "CASH DEPOSIT");
+    private static final Set<String> REFUND_OVER_DEDUCTION_KINDS = Set.of("REFUND", "OVER DEDUCTION", "REFUND OF OVER DEDUCTION");
+
     private final MonthlyContributionBatchRepository batchRepository;
     private final MonthlyContributionBatchRowRepository rowRepository;
+    private final MonthlyContributionBatchRowPostingRepository postingRepository;
     private final MemberRepository memberRepository;
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanRepository loanRepository;
+    private final LedgerEntryRepository ledgerEntryRepository;
     private final LedgerService ledgerService;
+    private final LoanService loanService;
 
     public MonthlyContributionService(MonthlyContributionBatchRepository batchRepository,
                                        MonthlyContributionBatchRowRepository rowRepository,
+                                       MonthlyContributionBatchRowPostingRepository postingRepository,
                                        MemberRepository memberRepository,
                                        LoanRepaymentScheduleRepository scheduleRepository,
                                        LoanRepository loanRepository,
-                                       LedgerService ledgerService) {
+                                       LedgerEntryRepository ledgerEntryRepository,
+                                       LedgerService ledgerService,
+                                       LoanService loanService) {
         this.batchRepository = batchRepository;
         this.rowRepository = rowRepository;
+        this.postingRepository = postingRepository;
         this.memberRepository = memberRepository;
         this.scheduleRepository = scheduleRepository;
         this.loanRepository = loanRepository;
+        this.ledgerEntryRepository = ledgerEntryRepository;
         this.ledgerService = ledgerService;
+        this.loanService = loanService;
+    }
+
+    /** Periods that already have an upload - the frontend disables these in its month picker so the
+     *  same period can't be posted twice; admin must deleteBatch() first to reopen one. */
+    public Set<String> uploadedPeriods() {
+        Set<String> periods = new LinkedHashSet<>();
+        for (MonthlyContributionBatch b : batchRepository.findAllByOrderByUploadedAtDesc()) periods.add(b.getPeriodMonth());
+        return periods;
+    }
+
+    public List<MonthlyContributionBatch> batches() {
+        return batchRepository.findAllByOrderByUploadedAtDesc();
+    }
+
+    public MonthlyContributionBatch requireBatch(Long id) {
+        return batchRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such batch: " + id));
     }
 
     @Transactional
     public MonthlyContributionBatch upload(Member admin, String periodMonth, MultipartFile file) throws IOException {
+        if (!batchRepository.findByPeriodMonth(periodMonth).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    periodMonth + " has already been uploaded - delete that batch first to re-upload it.");
+        }
         Map<String, Long> memberIdByRegno = new HashMap<>();
         for (Member m : memberRepository.findAll()) memberIdByRegno.put(m.getRegno(), m.getId());
+
+        byte[] fileBytes = file.getBytes();
 
         MonthlyContributionBatch batch = new MonthlyContributionBatch();
         batch.setPeriodMonth(periodMonth);
         batch.setFileName(file.getOriginalFilename());
         batch.setUploadedBy(admin.getId());
+        batch.setFileBytes(fileBytes);
         batch = batchRepository.save(batch);
 
         int total = 0, matched = 0;
         long totalAmount = 0;
 
-        try (InputStream in = file.getInputStream(); Workbook wb = WorkbookFactory.create(in)) {
+        try (InputStream in = new ByteArrayInputStream(fileBytes); Workbook wb = WorkbookFactory.create(in)) {
             Sheet sheet = wb.getSheetAt(0);
             Row header = sheet.getRow(0);
             int regnoCol = -1, amountCol = -1, kindCol = -1;
@@ -96,21 +161,30 @@ public class MonthlyContributionService {
                 if (memberId == null) {
                     batchRow.setMatched(false);
                     batchRow.setErrorMessage("No member with regno " + regno);
+                    rowRepository.save(batchRow);
                 } else {
-                    LocalDate postDate = firstOfMonth(periodMonth);
-                    boolean isRepayment = "LOAN_REPAYMENT".equals(batchRow.getKind());
-                    var entry = ledgerService.post(memberId, amount, postDate,
-                            (isRepayment ? "Loan repayment" : "Monthly savings") + " - " + periodMonth,
-                            batchRow.getKind(), isRepayment ? TransCat.LOAN : TransCat.SAVINGS, DrCr.CR,
-                            null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+                    batchRow = rowRepository.save(batchRow);
+                    LocalDate postDate = lastDayOfMonth(periodMonth);
+                    String kindUpper = batchRow.getKind();
+                    if ("LOAN_REPAYMENT".equals(kindUpper)) {
+                        var entry = ledgerService.post(memberId, amount, postDate, "Loan repayment - " + periodMonth,
+                                "LRPT", TransCat.LOAN, DrCr.CR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+                        Long scheduleId = applyToSchedule(memberId, amount);
+                        savePosting(batchRow.getId(), entry.getId(), scheduleId, amount);
+                    } else if (CASH_DEPOSIT_KINDS.contains(kindUpper)) {
+                        postSimpleSavingsCredit(admin, memberId, amount, postDate, periodMonth,
+                                "MSVG3", "Cash deposit", batchRow.getId());
+                    } else if (REFUND_OVER_DEDUCTION_KINDS.contains(kindUpper)) {
+                        postSimpleSavingsCredit(admin, memberId, amount, postDate, periodMonth,
+                                "MSVG2", "Refund of Over Deduction", batchRow.getId());
+                    } else {
+                        allocateSavings(admin, memberId, amount, periodMonth, postDate, batchRow.getId());
+                    }
                     batchRow.setMatched(true);
-                    batchRow.setLedgerEntryId(entry.getId());
+                    rowRepository.save(batchRow);
                     matched++;
                     totalAmount += amount;
-
-                    if (isRepayment) applyToSchedule(memberId, amount);
                 }
-                rowRepository.save(batchRow);
             }
         }
 
@@ -120,33 +194,199 @@ public class MonthlyContributionService {
         return batchRepository.save(batch);
     }
 
-    private void applyToSchedule(Long memberId, long amountPaid) {
+    /** Returns the installment's id this payment was applied to, so a later batch deletion can reverse
+     *  this exact amount off this exact row instead of guessing which installment it touched. */
+    private Long applyToSchedule(Long memberId, long amountPaid) {
         for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
             if (loan.getStatus() != LoanStatus.RUNNING) continue;
-            var next = scheduleRepository.findFirstByLoanIdAndStatusNotOrderByInstallmentNoAsc(loan.getId(), ScheduleStatus.PAID);
-            if (next.isEmpty()) continue;
-            LoanRepaymentSchedule installment = next.get();
-            long newPaid = installment.getAmountPaid() + amountPaid;
-            installment.setAmountPaid(newPaid);
-            installment.setStatus(newPaid >= installment.getAmountDue() ? ScheduleStatus.PAID : ScheduleStatus.PARTIAL);
-            installment.setPaidAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
-            scheduleRepository.save(installment);
+            Long scheduleId = applyToScheduleForLoan(loan.getId(), amountPaid);
+            if (scheduleId != null) return scheduleId;
+        }
+        return null;
+    }
 
-            boolean allPaid = scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loan.getId())
-                    .stream().allMatch(s -> s.getStatus() == ScheduleStatus.PAID);
-            if (allPaid) {
+    /** Same as applyToSchedule, but for a specific loan already chosen by the caller (the SAVINGS
+     *  waterfall knows exactly which loan each payment belongs to, rather than guessing "the first
+     *  running loan for this member"). Returns null if this loan has no unpaid installment at all -
+     *  a legacy-reconstructed loan, for instance, has no schedule rows to apply to. */
+    private Long applyToScheduleForLoan(Long loanId, long amountPaid) {
+        var next = scheduleRepository.findFirstByLoanIdAndStatusNotOrderByInstallmentNoAsc(loanId, ScheduleStatus.PAID);
+        if (next.isEmpty()) return null;
+        LoanRepaymentSchedule installment = next.get();
+        long newPaid = installment.getAmountPaid() + amountPaid;
+        installment.setAmountPaid(newPaid);
+        installment.setStatus(newPaid >= installment.getAmountDue() ? ScheduleStatus.PAID : ScheduleStatus.PARTIAL);
+        installment.setPaidAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        scheduleRepository.save(installment);
+
+        boolean allPaid = scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loanId)
+                .stream().allMatch(s -> s.getStatus() == ScheduleStatus.PAID);
+        if (allPaid) {
+            loanRepository.findById(loanId).ifPresent(loan -> {
                 loan.setStatus(LoanStatus.COMPLETED);
                 loanRepository.save(loan);
-            }
-            return;
+            });
+        }
+        return installment.getId();
+    }
+
+    /**
+     * The SAVINGS waterfall: pays the member's own standing monthly savings first, then applies
+     * whatever's left to each RUNNING loan in turn (oldest disbursed first - the older loan gets priority
+     * when there isn't enough to go around), each capped at its own remaining balance - same cap rule as
+     * LoanService.activeMonthlyRepayment. Money that outlasts every running loan's plan comes back to the
+     * member as a Refund of Over Deduction.
+     */
+    private void allocateSavings(Member admin, Long memberId, long amount, String periodMonth, LocalDate postDate, Long batchRowId) {
+        long remaining = amount;
+        Member member = memberRepository.findById(memberId).orElseThrow();
+
+        long savingsPortion = Math.min(remaining, member.getMonthlySavingsAmount());
+        if (savingsPortion > 0) {
+            var entry = ledgerService.post(memberId, savingsPortion, postDate, "Monthly savings - " + periodMonth,
+                    "MSVG", TransCat.SAVINGS, DrCr.CR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+            savePosting(batchRowId, entry.getId(), null, savingsPortion);
+        }
+        remaining -= savingsPortion;
+        if (remaining <= 0) return;
+
+        for (Loan loan : loanRepository.findByMemberIdAndStatusOrderByDisbursedAtAsc(memberId, LoanStatus.RUNNING)) {
+            Long monthly = loan.getMonthlyRepaymentAmount();
+            if (monthly == null) continue;
+            long balance = loanService.balanceFor(loan.getId());
+            if (balance <= 0) continue;
+            long due = Math.min(monthly, balance);
+
+            long payment = Math.min(remaining, due);
+            var entry = ledgerService.post(memberId, payment, postDate, "Loan repayment - " + periodMonth,
+                    "LRPT", TransCat.LOAN, DrCr.CR, loan.getId(), LedgerSource.MONTHLY_UPLOAD, admin.getId());
+            Long scheduleId = applyToScheduleForLoan(loan.getId(), payment);
+            savePosting(batchRowId, entry.getId(), scheduleId, payment);
+
+            remaining -= payment;
+            if (remaining <= 0) return;
+        }
+
+        if (remaining > 0) {
+            var entry = ledgerService.post(memberId, remaining, postDate, "Refund of Over Deduction - " + periodMonth,
+                    "MSVG2", TransCat.SAVINGS, DrCr.CR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+            savePosting(batchRowId, entry.getId(), null, remaining);
         }
     }
 
-    private static LocalDate firstOfMonth(String periodMonth) {
+    /** Cash Deposit (MSVG3) and a standalone Refund of Over Deduction (MSVG2) row are both a single
+     *  plain credit to the member's savings, no loan involved - unlike the auto-generated MSVG2 the
+     *  SAVINGS waterfall can produce as its own leftover, an admin can also post one directly as its own
+     *  upload row (e.g. a manual correction that isn't tied to that month's savings lump sum at all). */
+    private void postSimpleSavingsCredit(Member admin, Long memberId, long amount, LocalDate postDate,
+                                          String periodMonth, String transType, String label, Long batchRowId) {
+        var entry = ledgerService.post(memberId, amount, postDate, label + " - " + periodMonth,
+                transType, TransCat.SAVINGS, DrCr.CR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
+        savePosting(batchRowId, entry.getId(), null, amount);
+    }
+
+    private void savePosting(Long batchRowId, Long ledgerEntryId, Long scheduleId, long amount) {
+        MonthlyContributionBatchRowPosting posting = new MonthlyContributionBatchRowPosting();
+        posting.setBatchRowId(batchRowId);
+        posting.setLedgerEntryId(ledgerEntryId);
+        posting.setScheduleId(scheduleId);
+        posting.setAmount(amount);
+        postingRepository.save(posting);
+    }
+
+    /**
+     * Undoes a bad upload in full: deletes every ledger entry it posted (a SAVINGS row may have posted
+     * several - its own savings, one or more loan repayments, and a refund), reverses the exact amount
+     * each posting applied off its own schedule installment (never another upload's), reopens a loan if
+     * reversing tips it back below fully-paid, then removes the batch and its rows - reopening the
+     * period for re-upload.
+     */
+    @Transactional
+    public void deleteBatch(Long batchId) {
+        if (!batchRepository.existsById(batchId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such batch: " + batchId);
+        }
+        List<MonthlyContributionBatchRow> rows = rowRepository.findByBatchId(batchId);
+        List<Long> rowIds = rows.stream().map(MonthlyContributionBatchRow::getId).toList();
+        List<MonthlyContributionBatchRowPosting> postings = postingRepository.findByBatchRowIdIn(rowIds);
+        List<Long> ledgerEntryIds = new ArrayList<>();
+        for (MonthlyContributionBatchRowPosting posting : postings) {
+            if (posting.getScheduleId() != null) {
+                scheduleRepository.findById(posting.getScheduleId()).ifPresent(installment -> reverseInstallment(installment, posting.getAmount()));
+            }
+            ledgerEntryIds.add(posting.getLedgerEntryId());
+        }
+        // Postings and rows reference the ledger entries by FK, so they must go first.
+        postingRepository.deleteAll(postings);
+        rowRepository.deleteAll(rows);
+        ledgerEntryRepository.deleteAllById(ledgerEntryIds);
+        batchRepository.deleteById(batchId);
+    }
+
+    private void reverseInstallment(LoanRepaymentSchedule installment, long amount) {
+        long newPaid = Math.max(0, installment.getAmountPaid() - amount);
+        installment.setAmountPaid(newPaid);
+        installment.setStatus(newPaid <= 0 ? ScheduleStatus.PENDING
+                : newPaid < installment.getAmountDue() ? ScheduleStatus.PARTIAL : ScheduleStatus.PAID);
+        scheduleRepository.save(installment);
+
+        loanRepository.findById(installment.getLoanId()).ifPresent(loan -> {
+            if (loan.getStatus() != LoanStatus.COMPLETED) return;
+            boolean stillAllPaid = scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loan.getId())
+                    .stream().allMatch(s -> s.getStatus() == ScheduleStatus.PAID);
+            if (!stillAllPaid) {
+                loan.setStatus(LoanStatus.RUNNING);
+                loanRepository.save(loan);
+            }
+        });
+    }
+
+    /** Blank sheet for admin to fill in: SN/NAME are for readability only - only regno and amount are
+     *  actually read on upload, so a member's amount can be found and set correctly regardless of them. */
+    public byte[] template() throws IOException {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Monthly Contributions");
+
+            Font boldFont = wb.createFont();
+            boldFont.setBold(true);
+            CellStyle headerStyle = wb.createCellStyle();
+            headerStyle.setFont(boldFont);
+
+            String[] headers = {"SN", "REGNO", "NAME", "AMOUNT", "KIND"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell c = header.createCell(i);
+                c.setCellValue(headers[i]);
+                c.setCellStyle(headerStyle);
+            }
+
+            Row example = sheet.createRow(1);
+            example.createCell(0).setCellValue(1);
+            example.createCell(1).setCellValue("A00123");
+            example.createCell(2).setCellValue("JOHN DOE");
+            example.createCell(3).setCellValue(20000);
+            example.createCell(4).setCellValue("SAVINGS");
+
+            Row note = sheet.createRow(3);
+            note.createCell(0).setCellValue("KIND is SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, or REFUND OF OVER DEDUCTION " +
+                    "(default SAVINGS if left blank). SN and NAME are for readability only - only REGNO and AMOUNT are used to post the entry.");
+
+            for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+
+            wb.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    /** Posts on the last day of the period, matching every legacy-imported entry (28th/30th/31st) and
+     *  the remittance schedule's own "last date of the month" convention - not the 1st. */
+    private static LocalDate lastDayOfMonth(String periodMonth) {
         try {
-            return LocalDate.parse(periodMonth + "-01");
+            LocalDate first = LocalDate.parse(periodMonth + "-01");
+            return first.withDayOfMonth(first.lengthOfMonth());
         } catch (Exception e) {
-            return LocalDate.now().withDayOfMonth(1);
+            LocalDate now = LocalDate.now();
+            return now.withDayOfMonth(now.lengthOfMonth());
         }
     }
 

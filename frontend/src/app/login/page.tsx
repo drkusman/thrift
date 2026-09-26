@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
@@ -82,6 +83,12 @@ export default function LoginPage() {
           <button type="submit" disabled={submitting} className="btn btn-primary w-full">
             {submitting ? "Signing in..." : "Sign in"}
           </button>
+
+          <p className="text-center text-sm">
+            <Link href="/forgot-password" className="font-semibold text-[var(--maroon)] hover:underline">
+              Forgot your password?
+            </Link>
+          </p>
         </form>
       </div>
     </main>

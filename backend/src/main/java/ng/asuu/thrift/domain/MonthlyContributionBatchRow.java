@@ -12,6 +12,5 @@ public class MonthlyContributionBatchRow {
     @Column(nullable = false) private long amount;
     @Column(name = "kind") private String kind; // "SAVINGS" or "LOAN_REPAYMENT"
     @Column(nullable = false) private boolean matched;
-    @Column(name = "ledger_entry_id") private Long ledgerEntryId;
     @Column(name = "error_message") private String errorMessage;
 }

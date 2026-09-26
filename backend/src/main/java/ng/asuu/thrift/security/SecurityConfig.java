@@ -52,7 +52,8 @@ public class SecurityConfig {
             .cors(c -> {})
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(a -> a
-                .requestMatchers("/api/auth/login", "/actuator/health").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-token-valid",
+                        "/api/auth/reset-password", "/actuator/health").permitAll()
                 .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "FIN_SEC")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e

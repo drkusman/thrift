@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface MonthlyContributionBatchRepository extends JpaRepository<MonthlyContributionBatch, Long> {
     List<MonthlyContributionBatch> findAllByOrderByUploadedAtDesc();
+    List<MonthlyContributionBatch> findByPeriodMonth(String periodMonth);
 }

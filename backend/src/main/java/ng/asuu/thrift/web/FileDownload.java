@@ -22,4 +22,14 @@ final class FileDownload {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .body(bytes);
     }
+
+    /** For re-serving a file exactly as it was originally uploaded (e.g. a saved workbook), whose type
+     *  isn't necessarily xlsx (an admin could've uploaded .xls) - the filename's own extension is what
+     *  tells the browser what to do with it. */
+    static ResponseEntity<byte[]> raw(byte[] bytes, String filename) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(bytes);
+    }
 }
