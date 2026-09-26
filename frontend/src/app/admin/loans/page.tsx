@@ -122,7 +122,7 @@ function ApplyOnBehalfForm({ loanTypes, activeMembers, onApplied }: {
         <label className="field-label">Amount requested</label>
         <input
           type="number"
-          min={selectedType?.minAmount ?? 10000}
+          min={selectedType?.minAmount ?? 1}
           max={selectedType?.maxAmount ?? undefined}
           required
           value={amount}

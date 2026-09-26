@@ -30,8 +30,6 @@ import java.util.UUID;
  */
 @Service
 public class LoanService {
-    private static final long MIN_LOAN_AMOUNT = 10_000;
-
     private final LoanRepository loanRepository;
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanTypeService loanTypeService;
@@ -84,9 +82,8 @@ public class LoanService {
     private Loan createApplication(Member member, Long loanTypeId, long requestedAmount, String reason,
                                     Long guarantorOneId, Long guarantorTwoId, GuaranteeStatus initialGuarantorStatus) {
         LoanType type = loanTypeService.require(loanTypeId);
-        if (requestedAmount < MIN_LOAN_AMOUNT) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Requested amount must be at least " + MIN_LOAN_AMOUNT);
+        if (requestedAmount <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Requested amount must be positive");
         }
         if (type.getMinAmount() != null && requestedAmount < type.getMinAmount()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -118,6 +115,7 @@ public class LoanService {
         }
         requireActiveMember(guarantorOneId, "First guarantor");
         requireActiveMember(guarantorTwoId, "Second guarantor");
+        rejectIfDuplicatePending(member, type, requestedAmount, guarantorOneId, guarantorTwoId);
 
         Loan loan = new Loan();
         loan.setMemberId(member.getId());
@@ -131,6 +129,28 @@ public class LoanService {
         loan.setGuarantorTwoStatus(initialGuarantorStatus);
         loan.setStatus(LoanStatus.PENDING);
         return loanRepository.save(loan);
+    }
+
+    /** Catches a re-submitted application before it's created - same member, type, amount, and pair of
+     *  guarantors (in either order) as one already awaiting a decision. This is what a re-uploaded batch
+     *  file, or a double form submission, looks like: not a validation failure so much as "you already
+     *  did this". */
+    private void rejectIfDuplicatePending(Member member, LoanType type, long requestedAmount,
+                                          Long guarantorOneId, Long guarantorTwoId) {
+        boolean duplicate = loanRepository.findByMemberIdOrderByAppliedAtDesc(member.getId()).stream()
+                .anyMatch(l -> l.getStatus() == LoanStatus.PENDING
+                        && type.getId().equals(l.getLoanTypeId())
+                        && l.getRequestedAmount() == requestedAmount
+                        && sameGuarantorPair(l, guarantorOneId, guarantorTwoId));
+        if (duplicate) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "An identical pending " + type.getName() + " application for this amount and these guarantors already exists");
+        }
+    }
+
+    private static boolean sameGuarantorPair(Loan loan, Long guarantorOneId, Long guarantorTwoId) {
+        return (guarantorOneId.equals(loan.getGuarantorOneId()) && guarantorTwoId.equals(loan.getGuarantorTwoId()))
+                || (guarantorOneId.equals(loan.getGuarantorTwoId()) && guarantorTwoId.equals(loan.getGuarantorOneId()));
     }
 
     /** Pending loans where the given member is named as either guarantor - their "guarantee requests". */

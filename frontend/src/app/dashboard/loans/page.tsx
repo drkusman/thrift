@@ -188,7 +188,7 @@ function LoansContent() {
           <label className="field-label">Amount requested</label>
           <input
             type="number"
-            min={selectedType?.minAmount ?? 10000}
+            min={selectedType?.minAmount ?? 1}
             max={selectedType?.maxAmount ?? undefined}
             required
             value={amount}
@@ -196,7 +196,7 @@ function LoansContent() {
             className="field-input"
           />
           <p className="text-xs text-[var(--muted)] mt-1.5">
-            {selectedType ? (loanTypeAmountRangeLabel(selectedType) ?? `Minimum ${formatNaira(10000)}.`) : `Minimum ${formatNaira(10000)}.`}
+            {selectedType ? (loanTypeAmountRangeLabel(selectedType) ?? "") : "Select a loan type to see its amount limits."}
           </p>
         </div>
         <div>
