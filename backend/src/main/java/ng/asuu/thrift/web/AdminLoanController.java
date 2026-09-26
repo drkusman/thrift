@@ -2,10 +2,13 @@ package ng.asuu.thrift.web;
 
 import jakarta.validation.Valid;
 import ng.asuu.thrift.domain.Loan;
+import ng.asuu.thrift.domain.LoanStatus;
+import ng.asuu.thrift.domain.LoanType;
 import ng.asuu.thrift.domain.Member;
 import ng.asuu.thrift.security.MemberPrincipal;
 import ng.asuu.thrift.service.LoanBatchApplicationService;
 import ng.asuu.thrift.service.LoanExportService;
+import ng.asuu.thrift.service.LoanListExportService;
 import ng.asuu.thrift.service.LoanService;
 import ng.asuu.thrift.service.LoanTypeService;
 import ng.asuu.thrift.service.MemberService;
@@ -31,15 +34,18 @@ public class AdminLoanController {
     private final LoanTypeService loanTypeService;
     private final MemberService memberService;
     private final LoanExportService loanExportService;
+    private final LoanListExportService loanListExportService;
     private final LoanBatchApplicationService loanBatchApplicationService;
 
     public AdminLoanController(LoanService loanService, LoanTypeService loanTypeService,
                                 MemberService memberService, LoanExportService loanExportService,
+                                LoanListExportService loanListExportService,
                                 LoanBatchApplicationService loanBatchApplicationService) {
         this.loanService = loanService;
         this.loanTypeService = loanTypeService;
         this.memberService = memberService;
         this.loanExportService = loanExportService;
+        this.loanListExportService = loanListExportService;
         this.loanBatchApplicationService = loanBatchApplicationService;
     }
 
@@ -72,6 +78,34 @@ public class AdminLoanController {
 
     private Map<Long, Member> membersById() {
         return memberService.findAll().stream().collect(Collectors.toMap(Member::getId, Function.identity()));
+    }
+
+    @GetMapping("/by-status")
+    public List<LoanDto> byStatus(@RequestParam LoanStatus status) {
+        return loanService.byStatus(status).stream()
+                .map(l -> LoanDto.of(l, loanService.balanceFor(l.getId())))
+                .toList();
+    }
+
+    @GetMapping("/export-by-status.xlsx")
+    public ResponseEntity<byte[]> exportByStatusExcel(@RequestParam LoanStatus status) throws IOException {
+        byte[] bytes = loanListExportService.toExcel(loanService.byStatus(status), membersById(), loanTypesById(), statusLabel(status));
+        return FileDownload.excel(bytes, "loans-" + status.name().toLowerCase() + ".xlsx");
+    }
+
+    @GetMapping("/export-by-status.pdf")
+    public ResponseEntity<byte[]> exportByStatusPdf(@RequestParam LoanStatus status) throws IOException {
+        byte[] bytes = loanListExportService.toPdf(loanService.byStatus(status), membersById(), loanTypesById(), statusLabel(status));
+        return FileDownload.pdf(bytes, "loans-" + status.name().toLowerCase() + ".pdf");
+    }
+
+    private Map<Long, LoanType> loanTypesById() {
+        return loanTypeService.findAll().stream().collect(Collectors.toMap(LoanType::getId, Function.identity()));
+    }
+
+    private static String statusLabel(LoanStatus status) {
+        String name = status.name();
+        return name.charAt(0) + name.substring(1).toLowerCase();
     }
 
     @PostMapping

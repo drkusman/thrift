@@ -58,6 +58,10 @@ public class LoanService {
         return loanRepository.findByStatusOrderByAppliedAtAsc(LoanStatus.PENDING);
     }
 
+    public List<Loan> byStatus(LoanStatus status) {
+        return loanRepository.findByStatusOrderByAppliedAtAsc(status);
+    }
+
     public List<LoanRepaymentSchedule> scheduleFor(Long loanId) {
         return scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loanId);
     }
@@ -306,16 +310,21 @@ public class LoanService {
         return loanRepository.save(loan);
     }
 
-    /** The member's total monthly repayment obligation, summed across every loan currently being
-     *  repaid - a member can have more than one running loan at once (e.g. a legacy loan still
-     *  RUNNING alongside a newly disbursed one), and each contributes to the deduction. */
+    /** The member's total monthly repayment obligation, summed across every RUNNING loan - a member can
+     *  have more than one at once, and each contributes to the deduction. PULSED and COMPLETED loans
+     *  are excluded entirely: a pulsed loan isn't currently being deducted, and a completed one has
+     *  nothing left to deduct. Each loan is capped at its own remaining balance, so a loan in its final
+     *  month - owing less than a full standard installment - is only deducted for what's actually left,
+     *  never more than the loan's true outstanding balance. */
     public long activeMonthlyRepayment(Long memberId) {
         long total = 0;
         for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
-            if (loan.getStatus() == LoanStatus.DISBURSED || loan.getStatus() == LoanStatus.RUNNING) {
-                Long monthly = loan.getMonthlyRepaymentAmount();
-                total += monthly == null ? 0 : monthly;
-            }
+            if (loan.getStatus() != LoanStatus.RUNNING) continue;
+            Long monthly = loan.getMonthlyRepaymentAmount();
+            if (monthly == null) continue;
+            long balance = balanceFor(loan.getId());
+            if (balance <= 0) continue;
+            total += Math.min(monthly, balance);
         }
         return total;
     }

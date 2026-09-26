@@ -42,8 +42,14 @@ export const IconChevronLeft = (p: IconProps) => (
 export const IconChevronRight = (p: IconProps) => (
   <Svg {...p}><path d="M9 18l6-6-6-6" /></Svg>
 );
+export const IconChevronDown = (p: IconProps) => (
+  <Svg {...p}><path d="M6 9l6 6 6-6" /></Svg>
+);
 export const IconGuarantee = (p: IconProps) => (
   <Svg {...p}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" /><path d="M9 12l2 2 4-4" /></Svg>
+);
+export const IconRemittance = (p: IconProps) => (
+  <Svg {...p}><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 8h8M8 12h8M8 16h4" /></Svg>
 );
 export const IconEye = (p: IconProps) => (
   <Svg {...p}><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" /><circle cx="12" cy="12" r="3" /></Svg>

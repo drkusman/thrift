@@ -7,7 +7,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   IconDashboard, IconLoan, IconTransactions, IconSettings, IconMembers,
-  IconSavings, IconUpload, IconImport, IconLogout, IconChevronLeft, IconChevronRight, IconGuarantee,
+  IconSavings, IconImport, IconLogout, IconChevronLeft, IconChevronRight, IconGuarantee,
+  IconChevronDown,
 } from "./icons";
 
 const STORAGE_KEY = "thrift-sidebar-collapsed";
@@ -23,11 +24,26 @@ const MEMBER_LINKS = [
 const STAFF_LINKS = [
   { href: "/admin", label: "Overview", icon: IconDashboard, exact: true },
   { href: "/admin/members", label: "Members", icon: IconMembers },
-  { href: "/admin/loans", label: "Loans", icon: IconLoan },
+  {
+    label: "Loans", icon: IconLoan,
+    children: [
+      { href: "/admin/loans", label: "Loan Approval" },
+      { href: "/admin/remittance", label: "Monthly Remittance" },
+      { href: "/admin/loans/list", label: "Suspended Loans" },
+      { href: "/admin/contributions", label: "Monthly Upload" },
+    ],
+  },
   { href: "/admin/savings-requests", label: "Savings requests", icon: IconSavings },
-  { href: "/admin/contributions", label: "Monthly upload", icon: IconUpload },
   { href: "/admin/import", label: "Legacy import", icon: IconImport },
 ];
+
+type NavLink = { href: string; label: string; icon?: (p: { className?: string }) => React.ReactElement; exact?: boolean };
+type NavGroup = { label: string; icon: (p: { className?: string }) => React.ReactElement; children: NavLink[] };
+type NavItem = NavLink | NavGroup;
+
+function isGroup(item: NavItem): item is NavGroup {
+  return "children" in item;
+}
 
 export function Sidebar() {
   const { member, logout } = useAuth();
@@ -40,6 +56,17 @@ export function Sidebar() {
       return false;
     }
   });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
+  function isGroupOpen(group: NavGroup) {
+    const explicit = openGroups[group.label];
+    if (explicit !== undefined) return explicit;
+    return group.children.some((c) => pathname.startsWith(c.href));
+  }
+
+  function toggleGroup(label: string, currentlyOpen: boolean) {
+    setOpenGroups((prev) => ({ ...prev, [label]: !currentlyOpen }));
+  }
 
   function toggle() {
     setCollapsed((prev) => {
@@ -99,9 +126,53 @@ export function Sidebar() {
                 {group.label}
               </p>
             )}
-            {group.links.map((link) => {
+            {(group.links as NavItem[]).map((item) => {
+              if (isGroup(item)) {
+                const open = isGroupOpen(item);
+                const Icon = item.icon;
+                return (
+                  <div key={item.label}>
+                    <button
+                      type="button"
+                      onClick={() => (collapsed ? router.push(item.children[0].href) : toggleGroup(item.label, open))}
+                      title={collapsed ? item.label : undefined}
+                      className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        collapsed ? "justify-center px-0" : ""
+                      } text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--maroon-light)]/60`}
+                    >
+                      <Icon className="w-5 h-5 shrink-0" />
+                      {!collapsed && <span className="truncate flex-1 text-left">{item.label}</span>}
+                      {!collapsed && (
+                        <IconChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                      )}
+                    </button>
+                    {!collapsed && open && (
+                      <div className="mt-1 ml-4 pl-3 border-l border-[var(--line)] space-y-1">
+                        {item.children.map((child) => {
+                          const active = pathname === child.href || pathname.startsWith(child.href + "/");
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              className={`block rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                                active
+                                  ? "bg-[var(--maroon-light)] text-[var(--maroon-dark)]"
+                                  : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--maroon-light)]/60"
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              const link = item;
               const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
-              const Icon = link.icon;
+              const Icon = link.icon!;
               return (
                 <Link
                   key={link.href}

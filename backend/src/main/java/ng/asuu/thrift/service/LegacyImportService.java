@@ -49,11 +49,12 @@ public class LegacyImportService {
     private final LoanRepository loanRepository;
     private final PasswordEncoder passwordEncoder;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final LoanService loanService;
 
     public LegacyImportService(BankRepository bankRepository, LoanTypeRepository loanTypeRepository,
                                 MemberRepository memberRepository, LedgerEntryRepository ledgerEntryRepository,
                                 LoanRepository loanRepository, PasswordEncoder passwordEncoder,
-                                org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                                org.springframework.jdbc.core.JdbcTemplate jdbcTemplate, LoanService loanService) {
         this.bankRepository = bankRepository;
         this.loanTypeRepository = loanTypeRepository;
         this.memberRepository = memberRepository;
@@ -61,6 +62,7 @@ public class LegacyImportService {
         this.loanRepository = loanRepository;
         this.passwordEncoder = passwordEncoder;
         this.jdbcTemplate = jdbcTemplate;
+        this.loanService = loanService;
     }
 
     public static class Summary {
@@ -205,8 +207,8 @@ public class LegacyImportService {
 
     private static final String INSERT_LOAN_SQL =
             "INSERT INTO loans (loan_code, member_id, loan_type_id, requested_amount, interest_amount, " +
-            "disbursed_amount, total_repayable, status, applied_at, disbursed_at, decision_note) " +
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+            "disbursed_amount, total_repayable, status, applied_at, disbursed_at, decision_note, monthly_repayment_amount) " +
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
 
     /**
      * Reconstructs a historical Loan row per distinct legacy loan (grouped by the ledger's `loancode`
@@ -222,6 +224,20 @@ public class LegacyImportService {
         for (Member m : memberRepository.findAll()) memberIdByRegno.put(m.getRegno(), m.getId());
         Map<String, Long> loanTypeIdByCode = new HashMap<>();
         for (LoanType t : loanTypeRepository.findAll()) loanTypeIdByCode.put(t.getCode().toUpperCase(), t.getId());
+        // BFL ("Brought Forward Loan") isn't in loantype.csv - it's the legacy system's marker for a loan
+        // that was already running before the ledger started, carried in at its already-part-paid balance
+        // rather than as a fresh EML/MNL/PDL grant. Without its own LoanType row it fails the FK and every
+        // such loan (its own loanrepayplan, and every repayment tied to its loancode) gets silently dropped.
+        if (!loanTypeIdByCode.containsKey("BFL")) {
+            LoanType bfl = new LoanType();
+            bfl.setCode("BFL");
+            bfl.setName("Brought Forward Loan");
+            bfl.setInterestRate(0);
+            bfl.setInterestMethod(InterestMethod.AT_SOURCE);
+            bfl.setMaxDurationMonths(1);
+            bfl = loanTypeRepository.save(bfl);
+            loanTypeIdByCode.put("BFL", bfl.getId());
+        }
         Set<String> existingLoanCodes = new HashSet<>(
                 jdbcTemplate.queryForList("SELECT loan_code FROM loans WHERE loan_code IS NOT NULL", String.class));
 
@@ -262,13 +278,14 @@ public class LegacyImportService {
             Long loanTypeId = loanTypeIdByCode.get(typeCode);
             if (loanTypeId == null) { s.skipped++; s.errors.add("loan " + csvLoanCode + ": unknown loan type " + typeCode); continue; }
 
-            long disbursedAmount = 0, requestedAmount = 0, interestAmount = 0;
+            long disbursedAmount = 0, requestedAmount = 0, interestAmount = 0, monthlyRepaymentPlan = 0;
             LocalDate earliest = null;
             String runningStatus = null;
             for (Map<String, String> r : group) {
                 disbursedAmount += Math.round(parseDouble(r.get("amount"), 0));
                 requestedAmount += Math.round(parseDouble(r.get("loanamount"), 0));
                 interestAmount += Math.round(parseDouble(r.get("loaninterest"), 0));
+                monthlyRepaymentPlan += Math.round(parseDouble(r.get("loanrepayplan"), 0));
                 LocalDate d = parseDate(r.get("date"));
                 if (d != null && (earliest == null || d.isBefore(earliest))) earliest = d;
                 String rs = r.getOrDefault("runningstatus", "").trim();
@@ -279,6 +296,15 @@ public class LegacyImportService {
             Timestamp appliedAt = Timestamp.valueOf(earliest.atStartOfDay());
 
             final long finalRequested = requestedAmount, finalInterest = interestAmount, finalDisbursed = disbursedAmount;
+            // loanrepayplan is the legacy system's own authoritative monthly installment for every loan type
+            // (EML/MNL/PDL/BFL) - sometimes a plain totalRepayable/duration formula, sometimes a custom
+            // renegotiated value that formula can't reproduce (confirmed against the legacy UI's own loan
+            // table for a real member), and sometimes explicitly 0 - a member's plan reviewed all the way
+            // down, still Running with a balance outstanding but not currently being deducted (confirmed:
+            // a real member's MNL loanrepayplan=0, balance 137,500, status Running - the real remittance
+            // file charges nothing for it). Trusted unconditionally, defaulting to 0 when unstated - never
+            // inferred from repayment history.
+            final long finalMonthlyPlan = monthlyRepaymentPlan;
             KeyHolder keyHolder = new GeneratedKeyHolder();
             jdbcTemplate.update(con -> {
                 // Postgres's driver returns every column (not just the PK) for a bare
@@ -296,6 +322,7 @@ public class LegacyImportService {
                 ps.setTimestamp(9, appliedAt);
                 ps.setTimestamp(10, appliedAt);
                 ps.setString(11, "Reconstructed from legacy ledger (loan code: " + csvLoanCode + ")");
+                ps.setLong(12, finalMonthlyPlan);
                 return ps;
             }, keyHolder);
             Long loanId = keyHolder.getKey().longValue();
@@ -317,39 +344,96 @@ public class LegacyImportService {
     }
 
     /**
-     * Backfills monthly_repayment_amount on RUNNING legacy loans - importHistoricalLoans never set it,
-     * so every reconstructed loan's dashboard "loan payments" figure reads as zero until this runs.
-     * Derives the CURRENT installment rate from actual repayment history: a legacy loan's rate can
-     * change over time (renegotiated, or a member catching up after a gap), so if the most recent 2-3
-     * non-zero repayments agree on one amount, that wins over older history; otherwise the most common
-     * non-zero repayment amount is used. Zero-amount ledger rows (adjustments, not real repayments) are
-     * ignored either way. Only fills loans still NULL, so it's safe to re-run as new repayments post.
+     * Fallback for the minority of RUNNING legacy loans whose CSV loanrepayplan was missing/zero, so
+     * importHistoricalLoans couldn't set monthly_repayment_amount directly. Derives the CURRENT installment rate
+     * from actual repayment history: a legacy loan's rate can change over time (renegotiated, or a
+     * member catching up after a gap), so a run of 2 or more identical amounts at the very end of the
+     * history wins over older history, however long that run is; otherwise the most common non-zero
+     * repayment amount is used. Zero-amount ledger rows (adjustments, not real repayments) and "Liquidation" rows (a one-off
+     * lump sum from savings, not a recurring installment) are both excluded either way - a liquidation
+     * being mistaken for "the rate" was inflating a handful of members' figures by hundreds of thousands
+     * of naira, caught by cross-checking against a real payroll remittance file.
+     *
+     * A loan disbursed too recently to have any repayment history yet falls back to
+     * totalRepayable / the loan type's standard duration - the same formula LoanService.approve() uses
+     * for a brand new loan - rather than being left at zero (confirmed against a real payroll remittance
+     * file: every remaining discrepancy was exactly one of these loans, and the fallback amount matched
+     * to the kobo). Only fills loans still NULL, so it's safe to re-run as new repayments post.
      */
     @Transactional
     public Summary backfillLegacyMonthlyRepayments() {
         Summary s = new Summary();
+        Map<Long, LoanType> loanTypesById = new HashMap<>();
+        for (LoanType t : loanTypeRepository.findAll()) loanTypesById.put(t.getId(), t);
+
         for (Loan loan : loanRepository.findByStatusOrderByAppliedAtAsc(LoanStatus.RUNNING)) {
             if (loan.getMonthlyRepaymentAmount() != null) continue;
             s.processed++;
             List<Long> mostRecentFirst = new ArrayList<>();
             for (LedgerEntry e : ledgerEntryRepository.findByLoanIdOrderByDateAsc(loan.getId())) {
-                if (e.getDrCrStatus() == DrCr.CR && e.getAmount() > 0) mostRecentFirst.add(e.getAmount());
+                if (e.getDrCrStatus() != DrCr.CR || e.getAmount() <= 0) continue;
+                // A liquidation is a one-off lump sum from savings, not a recurring installment - taking
+                // it as "the rate" was inflating the figure wildly (confirmed against real payroll data).
+                if (e.getDescription() != null && e.getDescription().toLowerCase(Locale.ROOT).contains("liquidation")) continue;
+                mostRecentFirst.add(e.getAmount());
             }
             Collections.reverse(mostRecentFirst);
-            if (mostRecentFirst.isEmpty()) { s.skipped++; continue; }
-            loan.setMonthlyRepaymentAmount(resolveMonthlyRate(mostRecentFirst));
+
+            if (!mostRecentFirst.isEmpty()) {
+                loan.setMonthlyRepaymentAmount(resolveMonthlyRate(mostRecentFirst));
+            } else {
+                LoanType type = loanTypesById.get(loan.getLoanTypeId());
+                if (type == null || loan.getTotalRepayable() == null) { s.skipped++; continue; }
+                int duration = loan.getDurationMonths() != null ? loan.getDurationMonths() : type.getMaxDurationMonths();
+                if (loan.getDurationMonths() == null) loan.setDurationMonths(duration);
+                loan.setMonthlyRepaymentAmount(Math.floorDiv(loan.getTotalRepayable(), duration));
+            }
             loanRepository.save(loan);
             s.updated++;
         }
         return s;
     }
 
-    private static Long resolveMonthlyRate(List<Long> repaymentsMostRecentFirst) {
-        int n = Math.min(3, repaymentsMostRecentFirst.size());
-        List<Long> recent = repaymentsMostRecentFirst.subList(0, n);
-        if (recent.size() >= 2 && new HashSet<>(recent).size() == 1) {
-            return recent.get(0);
+    /**
+     * Closes out RUNNING legacy loans whose ledger repayments have overshot what's owed (a negative
+     * balance) - the legacy admin's own workflow requires an explicit "Liquidate" action to mark a loan
+     * Complete, so a loan can be fully (or over-)paid in the ledger for a while before that housekeeping
+     * step happens, or never happen at all in a CSV snapshot taken before it did (confirmed against the
+     * legacy UI's own loan table for a real member: two loans shown Complete/0.00 there were still
+     * RUNNING with a real loanrepayplan in the CSV - the CSV simply predated the liquidation). Only a
+     * negative balance is treated as proof of this - a loan sitting at exactly zero may just be between
+     * installments with its next one still due, so it's left alone; balanceFor() itself already caps a
+     * Running loan's remittance contribution at zero once balance reaches zero either way. Safe to re-run.
+     */
+    @Transactional
+    public Summary closeOverpaidLegacyLoans() {
+        Summary s = new Summary();
+        for (Loan loan : loanRepository.findByStatusOrderByAppliedAtAsc(LoanStatus.RUNNING)) {
+            s.processed++;
+            if (loanService.balanceFor(loan.getId()) < 0) {
+                loan.setStatus(LoanStatus.COMPLETED);
+                loan.setMonthlyRepaymentAmount(0L);
+                loanRepository.save(loan);
+                s.updated++;
+            } else {
+                s.skipped++;
+            }
         }
+        return s;
+    }
+
+    /** A rate change shows up as a run of the same amount at the very end of the history - however long
+     *  that run is - not necessarily exactly 2 or 3 entries. A00522's real loan renegotiated to a higher
+     *  rate for its last 2 payments after 15 months at the old one: requiring the top 3 to all agree (the
+     *  earlier version of this check) missed it, since the 3rd-most-recent was still the old rate, and
+     *  fell back to "most common", which is the OLD rate by volume. Counting the consecutive streak from
+     *  the most recent payment backward catches a 2-payment change just as well as a 5-payment one. */
+    private static Long resolveMonthlyRate(List<Long> repaymentsMostRecentFirst) {
+        long latest = repaymentsMostRecentFirst.get(0);
+        int streak = 1;
+        for (int i = 1; i < repaymentsMostRecentFirst.size() && repaymentsMostRecentFirst.get(i) == latest; i++) streak++;
+        if (streak >= 2) return latest;
+
         Map<Long, Long> counts = new HashMap<>();
         for (Long amount : repaymentsMostRecentFirst) counts.merge(amount, 1L, Long::sum);
         return counts.entrySet().stream()

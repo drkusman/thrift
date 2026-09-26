@@ -46,6 +46,11 @@ public class AdminImportController {
         return importService.backfillLegacyMonthlyRepayments().text();
     }
 
+    @PostMapping("/close-overpaid-legacy-loans")
+    public String closeOverpaidLegacyLoans() {
+        return importService.closeOverpaidLegacyLoans().text();
+    }
+
     private static String text(MultipartFile file) throws IOException {
         return new String(file.getBytes(), StandardCharsets.UTF_8);
     }
