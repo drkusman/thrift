@@ -24,6 +24,7 @@ const MEMBER_LINKS = [
 const STAFF_LINKS = [
   { href: "/admin", label: "Overview", icon: IconDashboard, exact: true },
   { href: "/admin/members", label: "Members", icon: IconMembers },
+  { href: "/admin/member-balances", label: "Member Balances", icon: IconMembers },
   {
     label: "Loans", icon: IconLoan,
     children: [
