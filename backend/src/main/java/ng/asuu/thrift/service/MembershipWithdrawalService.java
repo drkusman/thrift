@@ -79,15 +79,21 @@ public class MembershipWithdrawalService {
                     "This member still has an outstanding loan balance of " + s.totalLoan() +
                     " - liquidate every loan first");
         }
-        if (s.balance() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This member has no savings balance to withdraw");
+        // A zero-or-negative net balance means there's nothing to pay out and no COT to charge - just
+        // close the account. Posting a COT against a negative balance would be a credit, not a charge,
+        // which makes no sense for a fee; Karim's own rule is to skip both postings entirely here.
+        boolean hasPayout = s.balance() > 0;
+        Long cotEntryId = null;
+        Long payoutEntryId = null;
+        if (hasPayout) {
+            LocalDate today = LocalDate.now();
+            var cotEntry = ledgerService.post(memberId, s.cot(), today, "Membership Withdrawal COT", "COT",
+                    TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MANUAL_ADMIN, admin.getId());
+            var payoutEntry = ledgerService.post(memberId, s.withdrawableAmount(), today, "Membership Withdrawal Payout", "WDRL",
+                    TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MANUAL_ADMIN, admin.getId());
+            cotEntryId = cotEntry.getId();
+            payoutEntryId = payoutEntry.getId();
         }
-
-        LocalDate today = LocalDate.now();
-        var cotEntry = ledgerService.post(memberId, s.cot(), today, "Membership Withdrawal COT", "COT",
-                TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MANUAL_ADMIN, admin.getId());
-        var payoutEntry = ledgerService.post(memberId, s.withdrawableAmount(), today, "Membership Withdrawal Payout", "WDRL",
-                TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MANUAL_ADMIN, admin.getId());
 
         member.setStatus(MemberStatus.WITHDRAWN);
         member.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
@@ -98,10 +104,10 @@ public class MembershipWithdrawalService {
         audit.setTotalSavings(s.totalSavings());
         audit.setTotalLoan(s.totalLoan());
         audit.setBalance(s.balance());
-        audit.setCot(s.cot());
-        audit.setWithdrawableAmount(s.withdrawableAmount());
-        audit.setCotLedgerEntryId(cotEntry.getId());
-        audit.setPayoutLedgerEntryId(payoutEntry.getId());
+        audit.setCot(hasPayout ? s.cot() : 0);
+        audit.setWithdrawableAmount(hasPayout ? s.withdrawableAmount() : 0);
+        audit.setCotLedgerEntryId(cotEntryId);
+        audit.setPayoutLedgerEntryId(payoutEntryId);
         audit.setPerformedBy(admin.getId());
         return withdrawalRepository.save(audit);
     }

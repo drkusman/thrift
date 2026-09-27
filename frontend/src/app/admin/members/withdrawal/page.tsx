@@ -189,14 +189,18 @@ function AdminWithdrawalModuleContent() {
                       {!confirming ? (
                         <button
                           onClick={() => setConfirming(true)}
-                          disabled={!summary.canWithdraw || summary.balance <= 0}
+                          disabled={!summary.canWithdraw}
                           className="btn btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Withdraw
                         </button>
                       ) : (
                         <div className="flex gap-2 items-center">
-                          <span className="text-xs text-[var(--muted)]">Pay out {formatNaira(summary.withdrawableAmount)} and close this account?</span>
+                          <span className="text-xs text-[var(--muted)]">
+                            {summary.balance > 0
+                              ? `Pay out ${formatNaira(summary.withdrawableAmount)} and close this account?`
+                              : "This member has no savings balance to pay out - just close their account?"}
+                          </span>
                           <button onClick={onWithdraw} disabled={withdrawing} className="btn btn-danger text-xs">
                             {withdrawing ? "Processing..." : "Confirm"}
                           </button>

@@ -18,8 +18,9 @@ public class MembershipWithdrawal {
     @Column(nullable = false) private long balance;
     @Column(nullable = false) private long cot;
     @Column(name = "withdrawable_amount", nullable = false) private long withdrawableAmount;
-    @Column(name = "cot_ledger_entry_id", nullable = false) private Long cotLedgerEntryId;
-    @Column(name = "payout_ledger_entry_id", nullable = false) private Long payoutLedgerEntryId;
+    /** Null when balance was zero or negative - nothing was charged or paid out, just the status change. */
+    @Column(name = "cot_ledger_entry_id") private Long cotLedgerEntryId;
+    @Column(name = "payout_ledger_entry_id") private Long payoutLedgerEntryId;
     @Column(name = "performed_by", nullable = false) private Long performedBy;
     @Column(name = "performed_at", nullable = false) private LocalDateTime performedAt = LocalDateTime.now(ZoneOffset.UTC);
 }
