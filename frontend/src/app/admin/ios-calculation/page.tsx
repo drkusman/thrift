@@ -16,6 +16,7 @@ type Preview = {
   rows: PreviewRow[];
   totalAmount: number;
   alreadyRun: boolean;
+  totalCooperativeIncome: number;
 };
 
 /** Current fiscal year and the previous one, matching the Income report's own pair - the thrift's fiscal
@@ -147,6 +148,38 @@ function AdminIosCalculationContent() {
               {posting ? "Posting..." : "Confirm & Post"}
             </button>
           </div>
+
+          {preview.totalCooperativeIncome > 0 && (() => {
+            const pct = (preview.totalAmount / preview.totalCooperativeIncome) * 100;
+            const high = pct >= 40;
+            return (
+              <div className={`card p-4 max-w-2xl ${high ? "!border-[#f0c9cc]" : ""}`}>
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)] mb-2">
+                  Against FY {preview.fiscalYearLabel} cooperative income
+                </p>
+                <div className="flex items-center gap-6 flex-wrap">
+                  <div>
+                    <p className="text-[10px] uppercase text-[var(--muted)]">Proposed IOS</p>
+                    <p className="font-semibold text-[var(--ink)]">{formatNaira(preview.totalAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-[var(--muted)]">Total income (FY {preview.fiscalYearLabel})</p>
+                    <p className="font-semibold text-[var(--ink)]">{formatNaira(preview.totalCooperativeIncome)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-[var(--muted)]">Share of income</p>
+                    <p className={`font-bold ${high ? "text-[#a3161d]" : "text-[var(--maroon-dark)]"}`}>{pct.toFixed(1)}%</p>
+                  </div>
+                </div>
+                {high && (
+                  <p className="text-xs text-[#a3161d] mt-2">
+                    This payout would use up {pct.toFixed(1)}% of the year&rsquo;s total income - worth double-checking the rate before posting.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
           {postError && <p className="alert-error">{postError}</p>}
 
           <div className="card overflow-x-auto">

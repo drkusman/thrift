@@ -45,24 +45,29 @@ public class AnnualIosService {
     private final MonthlyContributionBatchRowRepository rowRepository;
     private final MonthlyContributionBatchRowPostingRepository postingRepository;
     private final LedgerService ledgerService;
+    private final IncomeReportService incomeReportService;
 
     public AnnualIosService(JdbcTemplate jdbc, MemberRepository memberRepository,
                              MonthlyContributionBatchRepository batchRepository,
                              MonthlyContributionBatchRowRepository rowRepository,
                              MonthlyContributionBatchRowPostingRepository postingRepository,
-                             LedgerService ledgerService) {
+                             LedgerService ledgerService, IncomeReportService incomeReportService) {
         this.jdbc = jdbc;
         this.memberRepository = memberRepository;
         this.batchRepository = batchRepository;
         this.rowRepository = rowRepository;
         this.postingRepository = postingRepository;
         this.ledgerService = ledgerService;
+        this.incomeReportService = incomeReportService;
     }
 
     public record Row(Long memberId, String regno, String fullName, long savingsBalance, long iosAmount) {}
 
+    /** totalCooperativeIncome is the same fiscal year's total income (see IncomeReportService) - shown
+     *  alongside the proposed IOS total so the admin can see what share of the year's income this payout
+     *  would represent before committing to it, not just the payout amount in isolation. */
     public record Preview(String fiscalYearLabel, LocalDate since, LocalDate until, double ratePercent,
-                           List<Row> rows, long totalAmount, boolean alreadyRun) {}
+                           List<Row> rows, long totalAmount, boolean alreadyRun, long totalCooperativeIncome) {}
 
     public Preview preview(LocalDate since, double ratePercent) {
         LocalDate until = since.plusYears(1).minusDays(1);
@@ -78,7 +83,8 @@ public class AnnualIosService {
                 .toList();
 
         long total = rows.stream().mapToLong(Row::iosAmount).sum();
-        return new Preview(fiscalYearLabel(since), since, until, ratePercent, rows, total, alreadyRun(since));
+        long income = incomeReportService.forFiscalYear(since).total();
+        return new Preview(fiscalYearLabel(since), since, until, ratePercent, rows, total, alreadyRun(since), income);
     }
 
     /** True if an auto-calculated IOS batch already exists for this fiscal year - re-running would
@@ -121,7 +127,8 @@ public class AnnualIosService {
                 .toList();
 
         long total = rows.stream().mapToLong(Row::iosAmount).sum();
-        return new Preview(fiscalYearLabel(since), since, until, 0, rows, total, true);
+        long income = incomeReportService.forFiscalYear(since).total();
+        return new Preview(fiscalYearLabel(since), since, until, 0, rows, total, true, income);
     }
 
     @Transactional
