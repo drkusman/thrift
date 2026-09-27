@@ -199,4 +199,15 @@ body {
   .alert-success { background: #e6f4ec; color: #0b5c2c; border: 1px solid #b7dfc6; border-radius: 9px; padding: .6rem .85rem; font-size: .85rem; }
 
   .brand-crest { height: 40px; width: 40px; object-fit: contain; }
+
+  /* Member-facing announcement marquee - same scrolling-banner pattern as GAT 2027's news marquee:
+     content duplicated once so the loop is seamless, speed set per-instance via inline animation-duration
+     (see AnnouncementMarquee.tsx), paused on hover so a message can actually be read. */
+  .marquee-bar { display: flex; align-items: stretch; background: #b91c1c; overflow: hidden; border-radius: var(--radius); }
+  .marquee-label { flex: none; display: flex; align-items: center; background: #000; color: #fff; font-weight: 700; font-size: .82rem; letter-spacing: .02em; padding: .55rem 1rem; white-space: nowrap; }
+  .marquee-viewport { flex: 1; overflow: hidden; position: relative; }
+  .marquee-track { display: flex; width: max-content; white-space: nowrap; align-items: center; animation: marquee-scroll 20s linear infinite; padding: .55rem 0; }
+  .marquee-item { padding: 0 2.2rem; font-size: .9rem; color: #fff; font-weight: 600; }
+  .marquee-bar:hover .marquee-track { animation-play-state: paused; }
+  @keyframes marquee-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 }

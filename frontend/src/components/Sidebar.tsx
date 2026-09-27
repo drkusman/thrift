@@ -55,6 +55,7 @@ const STAFF_LINKS = [
       { href: "/admin/income-report", label: "Income report" },
     ],
   },
+  { href: "/admin/announcements", label: "Announcements", icon: IconSavings },
   { href: "/admin/import", label: "Legacy import", icon: IconImport },
 ];
 

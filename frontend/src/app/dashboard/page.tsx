@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
+import { AnnouncementMarquee } from "@/components/AnnouncementMarquee";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Balance, Bank, LedgerEntry } from "@/lib/types";
@@ -30,6 +31,7 @@ function DashboardContent() {
 
   return (
     <div className="space-y-8">
+      <AnnouncementMarquee />
       <div className="rounded-2xl bg-gradient-to-br from-[var(--maroon)] to-[var(--maroon-dark)] text-white px-6 py-7 shadow-[var(--shadow-lg)] flex items-center justify-between gap-4 flex-wrap">
         <div>
           <p className="text-xs font-bold tracking-[0.15em] uppercase text-[var(--gold)]">Welcome back</p>
