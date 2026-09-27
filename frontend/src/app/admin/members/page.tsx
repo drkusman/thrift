@@ -15,7 +15,7 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [deptCode, setDeptCode] = useState("");
+  const [payPoint, setPayPoint] = useState("");
   const [monthlySavingsAmount, setMonthlySavingsAmount] = useState("20000");
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankId, setBankId] = useState<number | "">("");
@@ -37,12 +37,12 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
       if (accountNo && !/^\d{10}$/.test(accountNo)) { setError("Account number must be exactly 10 digits."); return; }
       try {
         const m = await api.post<Member>("/api/admin/members", {
-          regno, fullName, phone, email, deptCode,
+          regno, fullName, phone, email, payPoint: payPoint || null,
           monthlySavingsAmount: amount, bankId: bankId || null, accountNo: accountNo || null,
         });
         onRegistered(m);
         setMsg(`Registered. Default password is the reg. number: ${m.regno}`);
-        setRegno(""); setFullName(""); setPhone(""); setEmail(""); setDeptCode("");
+        setRegno(""); setFullName(""); setPhone(""); setEmail(""); setPayPoint("");
         setMonthlySavingsAmount("20000"); setBankId(""); setAccountNo("");
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Could not register member.");
@@ -80,8 +80,12 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
           <input value={email} onChange={(e) => setEmail(e.target.value)} className="field-input" />
         </div>
         <div>
-          <label className="field-label">Department</label>
-          <input value={deptCode} onChange={(e) => setDeptCode(e.target.value)} className="field-input" />
+          <label className="field-label">Pay point</label>
+          <select value={payPoint} onChange={(e) => setPayPoint(e.target.value)} className="field-input">
+            <option value="">Select...</option>
+            <option value="CHS">CHS</option>
+            <option value="MAIN">MAIN</option>
+          </select>
         </div>
         <div>
           <label className="field-label">Monthly savings</label>
