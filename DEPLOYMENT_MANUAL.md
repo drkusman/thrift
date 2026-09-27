@@ -155,7 +155,7 @@ journalctl -u thrift-backend -f
 ```bash
 cd ~/thrift/frontend
 npm ci
-NEXT_PUBLIC_API_URL="" npm run build
+npm run build:prod
 ```
 
 `output: "standalone"` (already set in `next.config.ts`) produces a minimal runtime in
@@ -278,7 +278,7 @@ sudo systemctl restart thrift-backend
 
 cd ../frontend
 npm ci
-NEXT_PUBLIC_API_URL="" npm run build
+npm run build:prod
 cp -r public .next/standalone/
 cp -r .next/static .next/standalone/.next/
 sudo systemctl restart thrift-frontend

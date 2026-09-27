@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:prod": "NEXT_PUBLIC_API_URL='' next build",
     "start": "next start",
     "lint": "eslint"
   },
