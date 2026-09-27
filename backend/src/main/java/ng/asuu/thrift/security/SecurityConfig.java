@@ -55,7 +55,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-token-valid",
                         "/api/auth/reset-password", "/actuator/health").permitAll()
                 .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "FIN_SEC")
-                .anyRequest().authenticated())
+                .requestMatchers("/api/**").authenticated()
+                // Everything else is the statically-exported frontend (see SpaResourceConfig) - it does
+                // its own auth gating client-side by calling /api/me and redirecting if that 401s, so the
+                // HTML/JS/CSS shell itself has to be publicly loadable before that check can even run.
+                .anyRequest().permitAll())
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) -> res.sendError(HttpStatus.UNAUTHORIZED.value()))
                 .accessDeniedHandler((req, res, ex) -> res.sendError(HttpStatus.FORBIDDEN.value())))

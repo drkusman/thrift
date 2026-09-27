@@ -4,3 +4,6 @@ target/
 .vscode/
 application.yml
 *.log
+# The frontend's static export, copied in at build time - see DEPLOYMENT_MANUAL.md. A build artifact,
+# not source - never commit it.
+src/main/resources/static/

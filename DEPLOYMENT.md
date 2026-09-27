@@ -1,12 +1,13 @@
 # Deploying ASUU-MOAUM Thrift to AWS (EC2 + RDS, via Docker)
 
-This runs the Spring Boot backend, the Next.js frontend, and an nginx reverse proxy as three Docker
-containers on one EC2 instance, managed by `docker compose`. The database itself lives outside Docker,
-on a managed **RDS PostgreSQL** instance - AWS handles its backups and patching, so the app container
-never holds the only copy of your members' savings/loan data. nginx listens on port 80 and routes
-`/api/*` to the backend and everything else to the frontend, so the whole app is reachable over plain
-HTTP at the EC2 instance's public IP with no CORS setup needed (frontend and backend look like the same
-origin to the browser).
+This runs the Spring Boot backend and an nginx reverse proxy as two Docker containers on one EC2
+instance, managed by `docker compose`. The frontend isn't its own container - it's a static export
+(plain HTML/CSS/JS, no Node server needed) baked directly into the backend's own jar at build time (see
+`backend/Dockerfile` and `SpaResourceConfig`), so the backend serves the whole site itself. The database
+lives outside Docker entirely, on a managed **RDS PostgreSQL** instance - AWS handles its backups and
+patching, so the app container never holds the only copy of your members' savings/loan data. nginx just
+listens on port 80 and forwards everything to the backend, so the whole app is reachable over plain HTTP
+at the EC2 instance's public IP with no CORS setup needed (there's only one origin to begin with).
 
 This guide assumes no domain name yet - you'll access the app at `http://<EC2_PUBLIC_IP>`. See
 [Adding a domain and HTTPS later](#adding-a-domain-and-https-later) for when you have one.
@@ -46,16 +47,16 @@ you're signed into the AWS Console.
 1. AWS Console -> **EC2 -> Launch instance**.
 2. **Name**: `thrift-prod`.
 3. **AMI**: Ubuntu Server 24.04 LTS (or 22.04) - free-tier eligible.
-4. **Instance type**: `t3.small` at minimum. The stack runs a JVM and a Node server together;
-   `t2.micro`/`t3.micro` (1 GB RAM) will swap heavily or OOM-kill containers. `t3.small` (2 GB) is a
-   reasonable starting point for the alpha-testing phase; resize later if needed.
+4. **Instance type**: `t3.small` at minimum - `t2.micro`/`t3.micro` (1 GB RAM) will swap heavily or
+   OOM-kill the JVM during the image build. `t3.small` (2 GB) is a reasonable starting point for the
+   alpha-testing phase; resize later if needed.
 5. **Key pair**: create a new one (e.g. `thrift-prod-key`) and download the `.pem` file - you cannot
    re-download it later. Keep it somewhere safe; you'll need it for every SSH connection.
 6. **Network settings -> Edit** security group rules. Add:
    - SSH (port 22) - source: **My IP** (not `0.0.0.0/0` - don't leave SSH open to the whole internet)
    - HTTP (port 80) - source: `0.0.0.0/0` (anyone can reach the app)
-   - Leave port 8090 (backend) closed to the internet - nginx is the only public entry point; the
-     backend and frontend containers only talk to each other over Docker's internal network.
+   - Leave port 8090 (backend) closed to the internet - nginx is the only public entry point; it
+     reaches the backend over Docker's own internal network.
 7. **Storage**: 20 GB gp3 is plenty to start.
 8. Launch the instance. Note its **public IPv4 address** once it's running - you'll use it everywhere
    below in place of `<EC2_PUBLIC_IP>`.
@@ -142,8 +143,8 @@ Set real values for:
 docker compose up -d --build
 ```
 
-First run takes a few minutes (compiling the backend jar, building the frontend, pulling the nginx
-image). Watch progress with:
+First run takes a few minutes (building the frontend's static export, compiling the backend jar around
+it, pulling the nginx image). Watch progress with:
 
 ```bash
 docker compose logs -f
@@ -169,7 +170,7 @@ password immediately from inside the app.
 
 **View logs for one service:**
 ```bash
-docker compose logs -f backend    # or frontend, nginx
+docker compose logs -f backend    # or nginx
 ```
 
 **Restart everything:**

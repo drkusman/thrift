@@ -1,6 +1,8 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     environment:
       # RDS_HOST/RDS_PORT/RDS_DB_NAME/RDS_USERNAME/RDS_PASSWORD come from .env - the database itself is
@@ -14,23 +16,13 @@ services:
     expose:
       - "8090"
 
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ""
-    restart: unless-stopped
-    depends_on:
-      - backend
-    expose:
-      - "3000"
-
+  # The frontend is a static export baked directly into the backend's own jar (see backend/Dockerfile
+  # and SpaResourceConfig) - there's no separate frontend container or process to run.
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     depends_on:
       - backend
-      - frontend
     ports:
       - "80:80"
     volumes:

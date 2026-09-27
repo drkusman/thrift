@@ -1,9 +1,11 @@
 # Deploying ASUU-MOAUM Thrift to EC2 — manual build & install (no Docker)
 
-This installs Java, Node.js, and PostgreSQL directly on the EC2 instance, builds the backend jar and
-the frontend on the box itself, and runs both as systemd services behind nginx. nginx listens on port
-80 and routes `/api/*` and `/actuator/*` to the backend (port 8090) and everything else to the frontend
-(port 3000), so the app is reachable at `http://<EC2_PUBLIC_IP>` with no CORS setup needed.
+This installs Java, Node.js, and PostgreSQL directly on the EC2 instance and runs the backend as a
+single systemd service behind nginx. The frontend isn't a separate running process - it's a static
+export (plain HTML/CSS/JS, no Node server needed at runtime) built once and copied into the backend's
+own jar, which then serves the whole site itself (see `SpaResourceConfig`). Node.js is only needed here
+to *build* the frontend, not to run it. nginx listens on port 80 and forwards everything to the backend
+(port 8090), so the app is reachable at `http://<EC2_PUBLIC_IP>` with no CORS setup needed.
 
 (If you'd rather run this as containers instead, see [DEPLOYMENT.md](DEPLOYMENT.md) - both approaches
 build the same code, just packaged differently.)
@@ -16,12 +18,12 @@ and you're signed into the AWS Console.
 
 1. **EC2 -> Launch instance** -> name it, e.g. `thrift-prod`.
 2. **AMI**: Ubuntu Server 24.04 LTS.
-3. **Instance type**: `t3.small` (2 GB RAM) minimum - a JVM, Postgres, and a Node server all running
-   at once will struggle on a 1 GB `t3.micro`.
+3. **Instance type**: `t3.small` (2 GB RAM) minimum - a JVM and Postgres running together will struggle
+   on a 1 GB `t3.micro`.
 4. **Key pair**: create one, download the `.pem`, keep it safe.
-5. **Security group**: allow SSH (22) from **My IP** only, and HTTP (80) from `0.0.0.0/0`. Leave 8090,
-   3000, and 5432 closed - nginx is the only public entry point, and Section 7 below binds the backend
-   and frontend to `127.0.0.1` so they aren't reachable directly even if the security group changes later.
+5. **Security group**: allow SSH (22) from **My IP** only, and HTTP (80) from `0.0.0.0/0`. Leave 8090 and
+   5432 closed - nginx is the only public entry point, and Section 7a below binds the backend to
+   `127.0.0.1` so it isn't reachable directly even if the security group changes later.
 6. **Storage**: 20 GB gp3.
 7. Launch it, note the **public IPv4 address** - that's `<EC2_PUBLIC_IP>` everywhere below.
 
@@ -42,7 +44,7 @@ sudo apt-get update
 # Java 21
 sudo apt-get install -y openjdk-21-jdk
 
-# Node.js 20 LTS
+# Node.js 20 LTS - only used to build the frontend's static export, nothing runs on it afterward
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
@@ -83,14 +85,30 @@ git clone https://<your-github-username>:<token>@github.com/drkusman/thrift.git
 cd thrift
 ```
 
-## 6. Build and configure the backend
+## 6. Build the frontend
+
+```bash
+cd ~/thrift/frontend
+npm ci
+npm run build:prod
+```
+
+This produces a static `out/` directory - plain HTML/CSS/JS, no server involved. Copy it into the
+backend's own resources so the jar serves it directly:
+
+```bash
+rm -rf ~/thrift/backend/src/main/resources/static
+cp -r out ~/thrift/backend/src/main/resources/static
+```
+
+## 7. Build and configure the backend
 
 ```bash
 cd ~/thrift/backend
 ./mvnw package -DskipTests
 ```
 
-This produces `target/thrift-0.0.1.jar`.
+This produces `target/thrift-0.0.1.jar`, with the frontend baked in alongside it.
 
 Now create the real config file (this is gitignored - it never goes near git, same as your own local
 setup):
@@ -104,7 +122,7 @@ Edit:
 - `spring.datasource.password` -> the Postgres password you set in Section 4
 - `thrift.admin.password` (the `THRIFT_ADMIN_PASSWORD:admin1234` default) -> change `admin1234` to a
   real password, or leave the `${THRIFT_ADMIN_PASSWORD:...}` placeholder and set it via an environment
-  variable in the systemd unit instead (Section 6a) - either works, pick one
+  variable in the systemd unit instead (Section 7a) - either works, pick one
 - Add `server.address: 127.0.0.1` under `server:` so the backend only accepts connections from nginx
   on the same machine, not the outside world
 
@@ -115,7 +133,7 @@ it picks up your changes:
 ./mvnw package -DskipTests
 ```
 
-### 6a. Create the systemd service
+### 7a. Create the systemd service
 
 ```bash
 sudo nano /etc/systemd/system/thrift-backend.service
@@ -150,56 +168,6 @@ Watch the startup log to confirm Flyway ran the migrations and the app started c
 journalctl -u thrift-backend -f
 ```
 
-## 7. Build and configure the frontend
-
-```bash
-cd ~/thrift/frontend
-npm ci
-npm run build:prod
-```
-
-`output: "standalone"` (already set in `next.config.ts`) produces a minimal runtime in
-`.next/standalone` that doesn't include the static assets or public files by default - copy them in:
-
-```bash
-cp -r public .next/standalone/
-cp -r .next/static .next/standalone/.next/
-```
-
-**Every time you rebuild the frontend, repeat these two `cp` commands** - a fresh `npm run build`
-overwrites `.next/standalone` without them.
-
-### 7a. Create the systemd service
-
-```bash
-sudo nano /etc/systemd/system/thrift-frontend.service
-```
-
-```ini
-[Unit]
-Description=ASUU-MOAUM Thrift frontend
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/thrift/frontend/.next/standalone
-Environment=PORT=3000
-Environment=HOSTNAME=127.0.0.1
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now thrift-frontend
-sudo systemctl status thrift-frontend
-```
-
 ## 8. Configure nginx
 
 ```bash
@@ -211,21 +179,8 @@ server {
     listen 80;
     client_max_body_size 50M;
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /actuator/ {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_set_header Host $host;
-    }
-
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -257,14 +212,12 @@ password immediately from inside the app.
 **View logs:**
 ```bash
 journalctl -u thrift-backend -f
-journalctl -u thrift-frontend -f
 sudo tail -f /var/log/nginx/error.log
 ```
 
-**Restart a service:**
+**Restart the backend:**
 ```bash
 sudo systemctl restart thrift-backend
-sudo systemctl restart thrift-frontend
 ```
 
 **Deploy a new version after pushing code changes:**
@@ -272,16 +225,15 @@ sudo systemctl restart thrift-frontend
 cd ~/thrift
 git pull
 
-cd backend
-./mvnw package -DskipTests
-sudo systemctl restart thrift-backend
-
-cd ../frontend
+cd frontend
 npm ci
 npm run build:prod
-cp -r public .next/standalone/
-cp -r .next/static .next/standalone/.next/
-sudo systemctl restart thrift-frontend
+rm -rf ../backend/src/main/resources/static
+cp -r out ../backend/src/main/resources/static
+
+cd ../backend
+./mvnw package -DskipTests
+sudo systemctl restart thrift-backend
 ```
 
 **Back up the database:**
