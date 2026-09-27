@@ -246,7 +246,10 @@ function AdminLoansContent() {
       setMembers(Object.fromEntries(rows.map((m) => [m.id, m])));
     });
     api.get<LoanType[]>("/api/loan-types").then((rows) => {
-      setLoanTypes(rows);
+      // BFL (Brought Forward Loan) is a legacy marker for balances carried over from the old system,
+      // not a real product - never offered for a new application, but loanTypesById stays unfiltered
+      // since an existing historical loan can still legitimately be that type and needs to display correctly.
+      setLoanTypes(rows.filter((t) => t.code !== "BFL"));
       setLoanTypesById(Object.fromEntries(rows.map((t) => [t.id, t])));
     });
     api.get<MemberOption[]>("/api/members/active").then(setActiveMembers);

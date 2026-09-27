@@ -92,7 +92,9 @@ function LoansContent() {
   }
 
   useEffect(() => {
-    api.get<LoanType[]>("/api/loan-types").then(setLoanTypes);
+    // BFL (Brought Forward Loan) is a legacy marker for balances carried over from the old system,
+    // not a real product - it's never something a member can newly apply for.
+    api.get<LoanType[]>("/api/loan-types").then((rows) => setLoanTypes(rows.filter((t) => t.code !== "BFL")));
     api.get<MemberOption[]>("/api/members/active").then(setActiveMembers);
     load();
   }, []);
