@@ -2,6 +2,7 @@ package ng.asuu.thrift.web;
 
 import ng.asuu.thrift.domain.MonthlyContributionBatch;
 import ng.asuu.thrift.security.MemberPrincipal;
+import ng.asuu.thrift.service.MonthlyContributionExportService;
 import ng.asuu.thrift.service.MonthlyContributionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,9 +17,12 @@ import java.util.Set;
 @RequestMapping("/api/admin/contributions")
 public class AdminContributionController {
     private final MonthlyContributionService monthlyContributionService;
+    private final MonthlyContributionExportService exportService;
 
-    public AdminContributionController(MonthlyContributionService monthlyContributionService) {
+    public AdminContributionController(MonthlyContributionService monthlyContributionService,
+                                        MonthlyContributionExportService exportService) {
         this.monthlyContributionService = monthlyContributionService;
+        this.exportService = exportService;
     }
 
     @GetMapping("/template.xlsx")
@@ -50,6 +54,26 @@ public class AdminContributionController {
         }
         String filename = batch.getFileName() != null ? batch.getFileName() : "contributions-" + batch.getPeriodMonth() + ".xlsx";
         return FileDownload.raw(batch.getFileBytes(), filename);
+    }
+
+    @GetMapping("/batches/{id}/export.xlsx")
+    public ResponseEntity<byte[]> exportBatchExcel(@PathVariable Long id) throws IOException {
+        var batch = monthlyContributionService.requireBatch(id);
+        String title = batchTitle(batch);
+        byte[] bytes = exportService.batchExcel(monthlyContributionService.rowsForExport(id), title);
+        return FileDownload.excel(bytes, "batch-" + id + "-" + batch.getPeriodMonth() + ".xlsx");
+    }
+
+    @GetMapping("/batches/{id}/export.pdf")
+    public ResponseEntity<byte[]> exportBatchPdf(@PathVariable Long id) throws IOException {
+        var batch = monthlyContributionService.requireBatch(id);
+        String title = batchTitle(batch);
+        byte[] bytes = exportService.batchPdf(monthlyContributionService.rowsForExport(id), title);
+        return FileDownload.pdf(bytes, "batch-" + id + "-" + batch.getPeriodMonth() + ".pdf");
+    }
+
+    private static String batchTitle(MonthlyContributionBatch batch) {
+        return (batch.getFileName() != null ? batch.getFileName() : "Monthly Contributions") + " - " + batch.getPeriodMonth();
     }
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")

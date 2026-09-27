@@ -133,6 +133,28 @@ public class MonthlyContributionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such batch: " + id));
     }
 
+    /** One row of a batch as shown on a downloadable export - regno/name/kind/amount, name resolved from
+     *  the member's current record (a batch row only stores regno). Matched rows only, sorted by name -
+     *  an unmatched row has no member to name and is already visible as an error on the page itself. */
+    public record BatchRowView(String regno, String fullName, String kind, long amount) {}
+
+    public List<BatchRowView> rowsForExport(Long batchId) {
+        List<MonthlyContributionBatchRow> rows = rowRepository.findByBatchId(batchId).stream()
+                .filter(MonthlyContributionBatchRow::isMatched)
+                .toList();
+        Map<String, Member> membersByRegno = new HashMap<>();
+        for (Member m : memberRepository.findAll()) membersByRegno.put(m.getRegno(), m);
+
+        return rows.stream()
+                .map(r -> {
+                    Member m = membersByRegno.get(r.getRegno());
+                    return new BatchRowView(r.getRegno(), m == null ? r.getRegno() : m.getFullName(),
+                            r.getKind() == null ? "SAVINGS" : r.getKind(), r.getAmount());
+                })
+                .sorted((a, b) -> a.fullName().compareToIgnoreCase(b.fullName()))
+                .toList();
+    }
+
     /**
      * mainContribution is the admin's own explicit declaration of which kind of file this is - not
      * inferred from KIND cell content alone, so the choice (and therefore whether the period gets

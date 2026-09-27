@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
-import { api, ApiError } from "@/lib/api";
+import { api, apiUrl, ApiError } from "@/lib/api";
 import { formatNaira } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 
@@ -68,7 +68,6 @@ function AdminIosCalculationContent() {
         const res = await api.post<{ batchId: number; matchedRows: number; totalAmount: number }>(
           "/api/admin/ios-calculation/post", { since: preview.since, ratePercent: preview.ratePercent });
         setPostResult(res);
-        setPreview(null);
       } catch (e) {
         setPostError(e instanceof ApiError ? e.message : "Could not post IOS.");
       } finally {
@@ -97,7 +96,7 @@ function AdminIosCalculationContent() {
         </div>
         <div>
           <label className="field-label">Interest rate (%)</label>
-          <input type="number" min={0} step="0.01" value={ratePercent} onChange={(e) => { setRatePercent(e.target.value); setPreview(null); }} required className="field-input" />
+          <input type="number" min={0} step="0.01" value={ratePercent} onChange={(e) => { setRatePercent(e.target.value); setPreview(null); setPostResult(null); }} required className="field-input" />
         </div>
         {previewError && <p className="alert-error">{previewError}</p>}
         <button type="submit" disabled={loadingPreview} className="btn btn-primary">
@@ -106,13 +105,23 @@ function AdminIosCalculationContent() {
       </form>
 
       {postResult && (
-        <div className="alert-success max-w-lg">
-          Posted IOS to {postResult.matchedRows} member(s), total {formatNaira(postResult.totalAmount)}.{" "}
-          <Link href="/admin/contributions" className="underline font-medium">View in Monthly Upload</Link>.
+        <div className="alert-success max-w-lg space-y-2">
+          <p>
+            Posted IOS to {postResult.matchedRows} member(s), total {formatNaira(postResult.totalAmount)}.{" "}
+            <Link href="/admin/contributions" className="underline font-medium">View in Monthly Upload</Link>.
+          </p>
+          <div className="flex gap-3">
+            <a href={apiUrl(`/api/admin/ios-calculation/batch/${postResult.batchId}/export.xlsx`)} className="text-xs underline font-medium">
+              Download Excel
+            </a>
+            <a href={apiUrl(`/api/admin/ios-calculation/batch/${postResult.batchId}/export.pdf`)} className="text-xs underline font-medium">
+              Download PDF
+            </a>
+          </div>
         </div>
       )}
 
-      {preview && (
+      {preview && !postResult && (
         <div className="space-y-3">
           {preview.alreadyRun && (
             <p className="alert-error max-w-2xl">
@@ -121,9 +130,19 @@ function AdminIosCalculationContent() {
             </p>
           )}
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <h2 className="font-semibold text-[var(--ink)]">
-              FY {preview.fiscalYearLabel} at {preview.ratePercent}% - {preview.rows.length} member(s), total {formatNaira(preview.totalAmount)}
-            </h2>
+            <div>
+              <h2 className="font-semibold text-[var(--ink)]">
+                FY {preview.fiscalYearLabel} at {preview.ratePercent}% - {preview.rows.length} member(s), total {formatNaira(preview.totalAmount)}
+              </h2>
+              <div className="flex gap-3 mt-1">
+                <a href={apiUrl(`/api/admin/ios-calculation/export.xlsx?since=${preview.since}&ratePercent=${preview.ratePercent}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+                  Download Excel
+                </a>
+                <a href={apiUrl(`/api/admin/ios-calculation/export.pdf?since=${preview.since}&ratePercent=${preview.ratePercent}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+                  Download PDF
+                </a>
+              </div>
+            </div>
             <button onClick={onConfirm} disabled={posting || preview.alreadyRun} className="btn btn-danger disabled:opacity-50 disabled:cursor-not-allowed">
               {posting ? "Posting..." : "Confirm & Post"}
             </button>

@@ -167,9 +167,15 @@ function AdminContributionsContent() {
                 </p>
               </div>
               <div className="flex gap-2">
+                <a href={apiUrl(`/api/admin/contributions/batches/${b.id}/export.xlsx`)} className="btn btn-secondary">
+                  Download Excel
+                </a>
+                <a href={apiUrl(`/api/admin/contributions/batches/${b.id}/export.pdf`)} className="btn btn-secondary">
+                  Download PDF
+                </a>
                 {b.hasFile && (
-                  <a href={apiUrl(`/api/admin/contributions/batches/${b.id}/file`)} className="btn btn-secondary">
-                    Download
+                  <a href={apiUrl(`/api/admin/contributions/batches/${b.id}/file`)} className="btn btn-secondary" title="The exact file that was uploaded">
+                    Original file
                   </a>
                 )}
                 <button onClick={() => onDelete(b)} disabled={deletingId === b.id} className="btn btn-danger">

@@ -90,6 +90,40 @@ public class AnnualIosService {
                 .anyMatch(b -> label.equals(b.getFileName()));
     }
 
+    /** Reconstructs the exact rows a posted IOS batch credited, for downloading after the fact - reads
+     *  the batch's own persisted rows (regno + amount) rather than recomputing preview() fresh, since by
+     *  now the just-posted IOS1 credits are themselves part of everyone's savings balance and would
+     *  double-count if run through the balance-at-FY-close query again. The one number that query still
+     *  needs - the balance as it stood right before this batch posted - is recovered by subtracting each
+     *  row's own IOS amount back out of today's balance. */
+    public Preview forBatch(Long batchId) {
+        MonthlyContributionBatch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Batch not found"));
+        List<MonthlyContributionBatchRow> batchRows = rowRepository.findByBatchId(batchId).stream()
+                .filter(r -> "IOS1".equals(r.getKind()))
+                .toList();
+
+        LocalDate until = LocalDate.parse(batch.getPeriodMonth() + "-31");
+        LocalDate since = until.minusYears(1).plusDays(1);
+        Map<Long, Long> balancesNow = savingsBalances(until);
+        Map<String, Member> membersByRegno = new HashMap<>();
+        for (Member m : memberRepository.findAll()) membersByRegno.put(m.getRegno(), m);
+
+        List<Row> rows = batchRows.stream()
+                .map(br -> {
+                    Member m = membersByRegno.get(br.getRegno());
+                    long balanceNow = m == null ? 0 : balancesNow.getOrDefault(m.getId(), 0L);
+                    long balanceBefore = balanceNow - br.getAmount();
+                    return new Row(m == null ? null : m.getId(), br.getRegno(),
+                            m == null ? br.getRegno() : m.getFullName(), balanceBefore, br.getAmount());
+                })
+                .sorted((a, b) -> a.fullName().compareToIgnoreCase(b.fullName()))
+                .toList();
+
+        long total = rows.stream().mapToLong(Row::iosAmount).sum();
+        return new Preview(fiscalYearLabel(since), since, until, 0, rows, total, true);
+    }
+
     @Transactional
     public MonthlyContributionBatch post(Member admin, LocalDate since, double ratePercent) {
         if (alreadyRun(since)) {
