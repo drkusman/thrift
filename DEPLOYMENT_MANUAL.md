@@ -5,22 +5,25 @@ the frontend on the box itself, and runs both as systemd services behind nginx. 
 80 and routes `/api/*` and `/actuator/*` to the backend (port 8090) and everything else to the frontend
 (port 3000), so the app is reachable at `http://<EC2_PUBLIC_IP>` with no CORS setup needed.
 
-(If you'd rather run this as containers instead, see [DEPLOYMENT.md](DEPLOYMENT.md) — both approaches
+(If you'd rather run this as containers instead, see [DEPLOYMENT.md](DEPLOYMENT.md) - both approaches
 build the same code, just packaged differently.)
+
+If you don't yet have an AWS account: go to [aws.amazon.com](https://aws.amazon.com), click **Create an
+AWS account**, and follow their signup. Nothing past this point can be done until that account exists
+and you're signed into the AWS Console.
 
 ## 1. Launch the EC2 instance
 
-Same as the Docker guide:
-1. **EC2 → Launch instance** → name it, e.g. `thrift-prod`.
+1. **EC2 -> Launch instance** -> name it, e.g. `thrift-prod`.
 2. **AMI**: Ubuntu Server 24.04 LTS.
-3. **Instance type**: `t3.small` (2 GB RAM) minimum — a JVM, Postgres, and a Node server all running
+3. **Instance type**: `t3.small` (2 GB RAM) minimum - a JVM, Postgres, and a Node server all running
    at once will struggle on a 1 GB `t3.micro`.
 4. **Key pair**: create one, download the `.pem`, keep it safe.
 5. **Security group**: allow SSH (22) from **My IP** only, and HTTP (80) from `0.0.0.0/0`. Leave 8090,
-   3000, and 5432 closed — nginx is the only public entry point, and Section 7 below binds the backend
+   3000, and 5432 closed - nginx is the only public entry point, and Section 7 below binds the backend
    and frontend to `127.0.0.1` so they aren't reachable directly even if the security group changes later.
 6. **Storage**: 20 GB gp3.
-7. Launch it, note the **public IPv4 address** — that's `<EC2_PUBLIC_IP>` everywhere below.
+7. Launch it, note the **public IPv4 address** - that's `<EC2_PUBLIC_IP>` everywhere below.
 
 ## 2. Connect
 
@@ -68,7 +71,7 @@ CREATE DATABASE thrift;
 ```
 
 Postgres listens on `localhost:5432` by default and isn't reachable from outside the instance unless
-you deliberately reconfigure `postgresql.conf` — leave it as-is.
+you deliberately reconfigure `postgresql.conf` - leave it as-is.
 
 ## 5. Get the code
 
@@ -77,7 +80,6 @@ If the GitHub repo is private, use a
 
 ```bash
 git clone https://<your-github-username>:<token>@github.com/drkusman/thrift.git
-git clone https://github.com/drkusman/thrift.git
 cd thrift
 ```
 
@@ -90,7 +92,7 @@ cd ~/thrift/backend
 
 This produces `target/thrift-0.0.1.jar`.
 
-Now create the real config file (this is gitignored — it never goes near git, same as your own local
+Now create the real config file (this is gitignored - it never goes near git, same as your own local
 setup):
 
 ```bash
@@ -99,14 +101,14 @@ nano src/main/resources/application.yml
 ```
 
 Edit:
-- `spring.datasource.password` → the Postgres password you set in Section 4
-- `thrift.admin.password` (the `THRIFT_ADMIN_PASSWORD:admin1234` default) → change `admin1234` to a
+- `spring.datasource.password` -> the Postgres password you set in Section 4
+- `thrift.admin.password` (the `THRIFT_ADMIN_PASSWORD:admin1234` default) -> change `admin1234` to a
   real password, or leave the `${THRIFT_ADMIN_PASSWORD:...}` placeholder and set it via an environment
-  variable in the systemd unit instead (Section 6a) — either works, pick one
+  variable in the systemd unit instead (Section 6a) - either works, pick one
 - Add `server.address: 127.0.0.1` under `server:` so the backend only accepts connections from nginx
   on the same machine, not the outside world
 
-The jar already has the *old* config baked in from before you edited the file — rebuild once more so
+The jar already has the *old* config baked in from before you edited the file - rebuild once more so
 it picks up your changes:
 
 ```bash
@@ -157,14 +159,14 @@ NEXT_PUBLIC_API_URL="" npm run build
 ```
 
 `output: "standalone"` (already set in `next.config.ts`) produces a minimal runtime in
-`.next/standalone` that doesn't include the static assets or public files by default — copy them in:
+`.next/standalone` that doesn't include the static assets or public files by default - copy them in:
 
 ```bash
 cp -r public .next/standalone/
 cp -r .next/static .next/standalone/.next/
 ```
 
-**Every time you rebuild the frontend, repeat these two `cp` commands** — a fresh `npm run build`
+**Every time you rebuild the frontend, repeat these two `cp` commands** - a fresh `npm run build`
 overwrites `.next/standalone` without them.
 
 ### 7a. Create the systemd service
@@ -246,7 +248,7 @@ sudo systemctl enable nginx
 curl http://localhost/actuator/health
 ```
 
-Should return `{"status":"UP"}`. From your own browser, visit `http://<EC2_PUBLIC_IP>` — you should see
+Should return `{"status":"UP"}`. From your own browser, visit `http://<EC2_PUBLIC_IP>` - you should see
 the login page. Log in with the admin regno/password you set in `application.yml`, and change the
 password immediately from inside the app.
 
@@ -286,7 +288,8 @@ sudo systemctl restart thrift-frontend
 ```bash
 sudo -u postgres pg_dump thrift > ~/thrift-backup-$(date +%F).sql
 ```
-Copy that file off the instance regularly (`scp` it to your own machine) — it's your only backup.
+Copy that file off the instance regularly (`scp` it to your own machine) - it's your only backup unless
+you later move to RDS with automated snapshots.
 
 **Restore from a backup:**
 ```bash
