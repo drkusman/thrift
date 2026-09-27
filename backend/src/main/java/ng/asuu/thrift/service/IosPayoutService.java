@@ -1,8 +1,13 @@
 package ng.asuu.thrift.service;
 
+import ng.asuu.thrift.domain.Bank;
 import ng.asuu.thrift.domain.IosPayoutRequest;
 import ng.asuu.thrift.domain.IosPayoutRequest.RequestStatus;
+import ng.asuu.thrift.domain.LedgerEntry.DrCr;
+import ng.asuu.thrift.domain.LedgerEntry.LedgerSource;
+import ng.asuu.thrift.domain.LedgerEntry.TransCat;
 import ng.asuu.thrift.domain.Member;
+import ng.asuu.thrift.repo.BankRepository;
 import ng.asuu.thrift.repo.IosPayoutRequestRepository;
 import ng.asuu.thrift.repo.MemberRepository;
 import ng.asuu.thrift.service.LedgerService.UnpaidIosCredit;
@@ -20,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -31,32 +37,41 @@ import java.util.stream.Collectors;
 /**
  * A member's payout request never carries a typed-in amount - it always claims one specific unpaid
  * IOS1 credit in full (see LedgerService.unpaidIosCredits), so a member applies for one year's interest
- * at a time rather than a blended lump sum across several. Applying is the only member action;
- * everything after that (paying them externally, then posting the matching IOS2 debit through the
- * monthly contribution upload) happens outside this service, in the admin's own workflow - markPaid()
- * just records that it happened.
+ * at a time rather than a blended lump sum across several. Applying is the only member action; the
+ * admin pays them externally, then clicks markPaid() - which posts the matching IOS2 debit to the
+ * ledger itself in that same action, so a request can never end up marked PAID with nothing to show for
+ * it in the member's own transaction history. A bulk Monthly Upload with KIND=IOS2 is still supported
+ * separately (see autoResolveOnUpload) for admins who'd rather pay out many members at once from a
+ * spreadsheet instead of one at a time here.
  */
 @Service
 public class IosPayoutService {
     private final IosPayoutRequestRepository requestRepository;
     private final LedgerService ledgerService;
     private final MemberRepository memberRepository;
+    private final BankRepository bankRepository;
 
     public IosPayoutService(IosPayoutRequestRepository requestRepository, LedgerService ledgerService,
-                             MemberRepository memberRepository) {
+                             MemberRepository memberRepository, BankRepository bankRepository) {
         this.requestRepository = requestRepository;
         this.ledgerService = ledgerService;
         this.memberRepository = memberRepository;
+        this.bankRepository = bankRepository;
     }
 
     /** Every unpaid IOS1 credit still free to apply for, oldest first - excludes any already tied up in
-     *  a still-pending request, so the same credit can't be requested twice before the first request is
-     *  decided. */
+     *  a pending or already-paid request, so the same credit can't be requested twice before the first
+     *  request is decided, and can't resurface after an admin marks it paid directly (markPaid() alone
+     *  doesn't post the offsetting IOS2 ledger debit - that only happens via a separate Monthly Upload -
+     *  so the ledger-side match in LedgerService.unpaidIosCredits() has no way to know it's spoken for
+     *  until that upload happens). A rejected request doesn't block reapplying. */
     public List<UnpaidIosCredit> unpaidCredits(Long memberId) {
-        Set<Long> alreadyPending = requestRepository.findByMemberIdAndStatus(memberId, RequestStatus.PENDING)
-                .stream().map(IosPayoutRequest::getSourceLedgerEntryId).collect(Collectors.toSet());
+        Set<Long> alreadyClaimed = requestRepository.findByMemberIdOrderByRequestedAtDesc(memberId).stream()
+                .filter(r -> r.getStatus() == RequestStatus.PENDING || r.getStatus() == RequestStatus.PAID)
+                .map(IosPayoutRequest::getSourceLedgerEntryId)
+                .collect(Collectors.toSet());
         return ledgerService.unpaidIosCredits(memberId).stream()
-                .filter(c -> !alreadyPending.contains(c.ledgerEntryId()))
+                .filter(c -> !alreadyClaimed.contains(c.ledgerEntryId()))
                 .toList();
     }
 
@@ -88,6 +103,10 @@ public class IosPayoutService {
         if (req.getStatus() != RequestStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Request already decided");
         }
+        var entry = ledgerService.post(req.getMemberId(), req.getRequestedAmount(), LocalDate.now(),
+                "Payment of Dividend - IOS payout request #" + req.getId(), "IOS2", TransCat.SAVINGS, DrCr.DR,
+                null, LedgerSource.MANUAL_ADMIN, admin.getId());
+        req.setPaidLedgerEntryId(entry.getId());
         req.setStatus(RequestStatus.PAID);
         req.setDecidedBy(admin.getId());
         req.setDecidedAt(LocalDateTime.now(ZoneOffset.UTC));
@@ -151,6 +170,8 @@ public class IosPayoutService {
         for (Member m : memberRepository.findAllById(rows.stream().map(IosPayoutRequest::getMemberId).toList())) {
             membersById.put(m.getId(), m);
         }
+        Map<Long, Bank> banksById = new HashMap<>();
+        for (Bank b : bankRepository.findAll()) banksById.put(b.getId(), b);
 
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Pending IOS Payouts");
@@ -160,7 +181,10 @@ public class IosPayoutService {
             CellStyle headerStyle = wb.createCellStyle();
             headerStyle.setFont(boldFont);
 
-            String[] headers = {"SN", "REGNO", "NAME", "AMOUNT", "KIND", "DATE", "DESCRIPTION"};
+            // BANK/ACCOUNT NO are here purely so whoever processes the external transfer has the
+            // member's payout details on hand in the same sheet - REGNO/AMOUNT are still the only
+            // columns the KIND=IOS2 re-upload actually reads.
+            String[] headers = {"SN", "REGNO", "NAME", "BANK", "ACCOUNT NO", "AMOUNT", "KIND", "DATE", "DESCRIPTION"};
             Row header = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) {
                 Cell c = header.createCell(i);
@@ -171,14 +195,17 @@ public class IosPayoutService {
             int r = 1;
             for (IosPayoutRequest req : rows) {
                 Member member = membersById.get(req.getMemberId());
+                Bank bank = member != null && member.getBankId() != null ? banksById.get(member.getBankId()) : null;
                 Row row = sheet.createRow(r);
                 row.createCell(0).setCellValue(r);
                 row.createCell(1).setCellValue(member != null ? member.getRegno() : "");
                 row.createCell(2).setCellValue(member != null ? member.getFullName() : "");
-                row.createCell(3).setCellValue(req.getRequestedAmount());
-                row.createCell(4).setCellValue("IOS2");
-                row.createCell(5).setCellValue(req.getRequestedAt().toLocalDate().toString());
-                row.createCell(6).setCellValue("Payment of Dividend - requested " + req.getRequestedAt().toLocalDate());
+                row.createCell(3).setCellValue(bank != null ? bank.getName() : "");
+                row.createCell(4).setCellValue(member != null && member.getAccountNo() != null ? member.getAccountNo() : "");
+                row.createCell(5).setCellValue(req.getRequestedAmount());
+                row.createCell(6).setCellValue("IOS2");
+                row.createCell(7).setCellValue(req.getRequestedAt().toLocalDate().toString());
+                row.createCell(8).setCellValue("Payment of Dividend - requested " + req.getRequestedAt().toLocalDate());
                 r++;
             }
 
