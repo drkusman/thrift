@@ -3,12 +3,16 @@ package ng.asuu.thrift.service;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-/** Wraps JavaMailSender so a missing/unreachable SMTP server never breaks a request - it just logs the message instead. */
+/** Wraps JavaMailSender so a missing/unreachable SMTP server never breaks a request - it just logs the message instead.
+ *  Spring Boot only registers a JavaMailSender bean when spring.mail.host is actually set, so it's pulled in via
+ *  ObjectProvider rather than a direct constructor dependency - a required JavaMailSender would fail application
+ *  startup entirely whenever SMTP isn't configured, defeating the whole point of this fallback. */
 @Service
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
@@ -17,10 +21,10 @@ public class MailService {
     private final boolean configured;
     private final String from;
 
-    public MailService(JavaMailSender mailSender, @Value("${spring.mail.host:}") String host,
+    public MailService(ObjectProvider<JavaMailSender> mailSenderProvider, @Value("${spring.mail.host:}") String host,
                         @Value("${thrift.mail.from:}") String from) {
-        this.mailSender = mailSender;
-        this.configured = host != null && !host.isBlank();
+        this.mailSender = mailSenderProvider.getIfAvailable();
+        this.configured = host != null && !host.isBlank() && this.mailSender != null;
         this.from = from;
     }
 
