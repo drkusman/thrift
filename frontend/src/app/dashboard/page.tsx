@@ -5,7 +5,7 @@ import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
-import { Balance, LedgerEntry } from "@/lib/types";
+import { Balance, Bank, LedgerEntry } from "@/lib/types";
 import { formatNaira } from "@/lib/ui";
 
 function formatLastSeen(iso: string | null) {
@@ -17,19 +17,42 @@ function DashboardContent() {
   const { member } = useAuth();
   const [balance, setBalance] = useState<Balance | null>(null);
   const [recent, setRecent] = useState<LedgerEntry[]>([]);
+  const [banks, setBanks] = useState<Record<number, Bank>>({});
 
   useEffect(() => {
     api.get<Balance>("/api/me/balance").then(setBalance);
     api.get<LedgerEntry[]>("/api/me/transactions").then((rows) => setRecent(rows.slice(0, 8)));
+    api.get<Bank[]>("/api/banks").then((rows) => setBanks(Object.fromEntries(rows.map((b) => [b.id, b]))));
   }, []);
+
+  const hasAccount = !!(member?.bankId && member?.accountNo);
+  const bank = member?.bankId != null ? banks[member.bankId] : undefined;
 
   return (
     <div className="space-y-8">
-      <div className="rounded-2xl bg-gradient-to-br from-[var(--maroon)] to-[var(--maroon-dark)] text-white px-6 py-7 shadow-[var(--shadow-lg)]">
-        <p className="text-xs font-bold tracking-[0.15em] uppercase text-[var(--gold)]">Welcome back</p>
-        <h1 className="text-2xl font-semibold mt-1">{member?.fullName}</h1>
-        <p className="text-sm text-white/75 mt-1">{member?.regno} &middot; {member?.deptCode}</p>
-        <p className="text-xs text-white/60 mt-3">Last seen: {formatLastSeen(member?.lastSeenAt ?? null)}</p>
+      <div className="rounded-2xl bg-gradient-to-br from-[var(--maroon)] to-[var(--maroon-dark)] text-white px-6 py-7 shadow-[var(--shadow-lg)] flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-xs font-bold tracking-[0.15em] uppercase text-[var(--gold)]">Welcome back</p>
+          <h1 className="text-2xl font-semibold mt-1">{member?.fullName}</h1>
+          <p className="text-sm text-white/75 mt-1">{member?.regno} &middot; {member?.deptCode}</p>
+          <p className="text-xs text-white/60 mt-3">Last seen: {formatLastSeen(member?.lastSeenAt ?? null)}</p>
+        </div>
+        {hasAccount ? (
+          <div className="text-right">
+            <p className="text-xs font-bold tracking-[0.1em] uppercase text-[var(--gold)]">Account details</p>
+            <p className="text-sm font-medium mt-1">{bank?.name ?? "Unknown bank"}</p>
+            <p className="text-sm text-white/75">{member?.accountNo}</p>
+          </div>
+        ) : (
+          <div className="text-right max-w-[220px]">
+            <p className="text-sm font-medium text-[var(--gold)]">Account details missing</p>
+            <p className="text-xs text-white/75 mt-1">
+              Add your bank account in{" "}
+              <Link href="/dashboard/settings" className="underline font-medium text-white">Settings</Link>{" "}
+              so payouts can reach you.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
