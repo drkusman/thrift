@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
+import { BankSearchSelect } from "@/components/BankSearchSelect";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { Bank, IosPayoutRequest, MembershipWithdrawalRequest, MembershipWithdrawalSummary, SavingsRequest, UnpaidIosCredit } from "@/lib/types";
@@ -84,6 +85,7 @@ function SettingsContent() {
     await bankGuard(async () => {
       setBankError(null); setBankMsg(null);
       if (!bankId) { setBankError("Choose a bank."); return; }
+      if (!/^\d{10}$/.test(accountNo)) { setBankError("Account number must be exactly 10 digits."); return; }
       try {
         await api.post("/api/me/bank-account", { bankId, accountNo });
         await refresh();
@@ -135,14 +137,18 @@ function SettingsContent() {
         <h2 className="font-semibold text-[var(--ink)]">Bank account</h2>
         <div>
           <label className="field-label">Bank</label>
-          <select value={bankId} onChange={(e) => setBankId(e.target.value ? Number(e.target.value) : "")} className="field-input" required>
-            <option value="">Select...</option>
-            {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          <BankSearchSelect options={banks} value={bankId} onChange={setBankId} />
         </div>
         <div>
           <label className="field-label">Account number</label>
-          <input value={accountNo} onChange={(e) => setAccountNo(e.target.value)} required className="field-input" />
+          <input
+            value={accountNo}
+            onChange={(e) => setAccountNo(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            inputMode="numeric"
+            maxLength={10}
+            required
+            className="field-input"
+          />
         </div>
         {bankError && <p className="alert-error">{bankError}</p>}
         {bankMsg && <p className="alert-success">{bankMsg}</p>}
