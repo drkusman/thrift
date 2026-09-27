@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -12,6 +12,13 @@ import {
 } from "./icons";
 
 const STORAGE_KEY = "thrift-sidebar-collapsed";
+const THEME_KEY = "thrift-theme";
+
+function currentTheme(): "light" | "dark" {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr === "light" || attr === "dark") return attr;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 const MEMBER_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: IconDashboard, exact: true },
@@ -71,6 +78,22 @@ export function Sidebar() {
     }
   });
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    setDark(currentTheme() === "dark");
+  }, []);
+
+  function toggleTheme() {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // per-viewer convenience only - fine if it doesn't persist
+    }
+    document.documentElement.setAttribute("data-theme", next);
+    setDark(next === "dark");
+  }
 
   function isGroupOpen(group: NavGroup) {
     const explicit = openGroups[group.label];
@@ -215,6 +238,17 @@ export function Sidebar() {
             {member.fullName} <span className="block text-[10px]">{member.regno}</span>
           </p>
         )}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={collapsed ? (dark ? "Switch to light mode" : "Switch to dark mode") : undefined}
+          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--maroon-light)]/60 ${
+            collapsed ? "justify-center px-0" : ""
+          }`}
+        >
+          <span className="w-5 h-5 shrink-0 grid place-items-center text-base leading-none">{dark ? "☀️" : "🌙"}</span>
+          {!collapsed && <span>{dark ? "Light mode" : "Dark mode"}</span>}
+        </button>
         <button
           onClick={onLogout}
           title={collapsed ? "Log out" : undefined}

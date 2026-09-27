@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 import { PasswordInput } from "@/components/PasswordInput";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -38,7 +39,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex-1 flex flex-col lg:flex-row lg:min-h-screen bg-[var(--bg)]">
+    <main className="relative flex-1 flex flex-col lg:flex-row lg:min-h-screen bg-[var(--bg)]">
+      <ThemeToggle className="!absolute top-4 right-4 z-10 bg-[var(--card)]" />
       <div className="relative hidden lg:block lg:flex-1">
         <Image src="/campus.jpg" alt="University campus" fill priority className="object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--maroon-dark)] via-[var(--maroon-dark)]/30 to-transparent" />

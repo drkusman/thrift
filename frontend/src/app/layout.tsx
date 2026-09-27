@@ -18,12 +18,18 @@ export const metadata: Metadata = {
   description: "ASUU-MOAUM cooperative thrift & savings portal",
 };
 
+// Applies a saved theme before first paint, so there's no flash of the wrong theme on load.
+const themeInitScript = `(function(){try{var t=localStorage.getItem("thrift-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="h-full flex flex-col overflow-hidden">
         <AuthProvider>{children}</AuthProvider>
       </body>
