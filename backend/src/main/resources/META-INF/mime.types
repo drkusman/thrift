@@ -1,0 +1,3 @@
+# Merged into Spring's built-in MediaTypeFactory mappings (which doesn't know this extension by
+# default) so the PWA manifest serves as the correct MIME type instead of application/octet-stream.
+application/manifest+json	webmanifest
