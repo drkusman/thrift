@@ -71,6 +71,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<MemberView> me(@AuthenticationPrincipal MemberPrincipal principal) {
-        return ResponseEntity.ok(MemberView.of(principal.getMember()));
+        // Re-fetch rather than trust the session-cached principal - see MeController.me()'s own comment.
+        return ResponseEntity.ok(MemberView.of(memberService.require(principal.getMember().getId())));
     }
 }

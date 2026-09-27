@@ -40,7 +40,10 @@ public class MeController {
 
     @GetMapping
     public MemberView me(@AuthenticationPrincipal MemberPrincipal principal) {
-        return MemberView.of(principal.getMember());
+        // Re-fetch rather than trust the session-cached principal, same reason as balance() below -
+        // a bank-account/savings-amount update elsewhere in the same session would otherwise never show
+        // up here until the member logs out and back in.
+        return MemberView.of(memberService.require(principal.getMember().getId()));
     }
 
     @PostMapping("/password")
