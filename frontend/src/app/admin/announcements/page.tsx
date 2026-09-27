@@ -9,16 +9,30 @@ type Announcement = { id: number; message: string; published: boolean; createdAt
 
 function AnnouncementRow({ a, onChanged }: { a: Announcement; onChanged: () => void }) {
   const guard = useSubmitGuard();
+  const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState(a.message);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(published: boolean) {
+  function startEdit() {
+    setMessage(a.message);
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setMessage(a.message);
+    setError(null);
+    setEditing(false);
+  }
+
+  async function save(published: boolean, exitEditingOnSuccess: boolean) {
     await guard(async () => {
       setError(null);
       setBusy(true);
       try {
         await api.put(`/api/admin/announcements/${a.id}`, { message, published });
+        if (exitEditingOnSuccess) setEditing(false);
         onChanged();
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Could not save.");
@@ -49,11 +63,22 @@ function AnnouncementRow({ a, onChanged }: { a: Announcement; onChanged: () => v
         <span className={`badge ${a.published ? "badge-green" : "badge-grey"}`}>{a.published ? "Published" : "Hidden"}</span>
         <span className="text-xs text-[var(--muted)]">{a.createdAt.slice(0, 10)}</span>
       </div>
-      <textarea value={message} onChange={(e) => setMessage(e.target.value)} className="field-input" rows={2} />
+      {editing ? (
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} className="field-input" rows={2} autoFocus />
+      ) : (
+        <p className="text-sm text-[var(--ink)] whitespace-pre-wrap">{a.message}</p>
+      )}
       {error && <p className="alert-error text-sm">{error}</p>}
       <div className="flex gap-2">
-        <button onClick={() => save(a.published)} disabled={busy} className="btn btn-secondary text-xs">Save text</button>
-        <button onClick={() => save(!a.published)} disabled={busy} className="btn btn-gold text-xs">
+        {editing ? (
+          <>
+            <button onClick={() => save(a.published, true)} disabled={busy} className="btn btn-primary text-xs">Save</button>
+            <button onClick={cancelEdit} disabled={busy} className="btn btn-secondary text-xs">Cancel</button>
+          </>
+        ) : (
+          <button onClick={startEdit} className="btn btn-secondary text-xs">Edit</button>
+        )}
+        <button onClick={() => save(!a.published, false)} disabled={busy} className="btn btn-gold text-xs">
           {a.published ? "Unpublish" : "Publish"}
         </button>
         <button onClick={remove} disabled={busy} className="btn btn-danger text-xs">Delete</button>
