@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
-import { api, ApiError } from "@/lib/api";
+import { api, apiUrl, ApiError } from "@/lib/api";
 import { formatNaira } from "@/lib/ui";
 
 type TypeAmount = { type: string; amount: number };
@@ -15,6 +15,7 @@ type IncomeReport = {
   interestByLoanType: TypeAmount[];
   liquidationFees: number;
   withdrawalCot: number;
+  applicationFormSales: number;
   total: number;
 };
 
@@ -39,7 +40,7 @@ type TransactionRow = {
 
 type DrillDown =
   | { kind: "interest"; since: string; loanType: string }
-  | { kind: "liquidation" | "withdrawal"; since: string };
+  | { kind: "liquidation" | "withdrawal" | "formSales"; since: string };
 
 function drillDownKey(d: DrillDown) {
   return d.kind === "interest" ? `interest:${d.since}:${d.loanType}` : `${d.kind}:${d.since}`;
@@ -60,32 +61,44 @@ function InterestLoansTable({ since, loanType }: { since: string; loanType: stri
   if (error) return <p className="alert-error text-xs">{error}</p>;
   if (!rows) return <p className="text-xs text-[var(--muted)] p-2">Loading...</p>;
 
+  const query = `since=${since}&loanType=${encodeURIComponent(loanType)}`;
+
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-left text-[var(--muted)]">
-          <th className="p-2">Regno</th>
-          <th className="p-2">Name</th>
-          <th className="p-2">Loan code</th>
-          <th className="p-2">Loan type</th>
-          <th className="p-2">Disbursed</th>
-          <th className="p-2 text-right">Interest</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-[var(--line)]">
-        {rows.map((r, i) => (
-          <tr key={i}>
-            <td className="p-2">{r.regno}</td>
-            <td className="p-2">{r.fullName}</td>
-            <td className="p-2">{r.loanCode ?? "-"}</td>
-            <td className="p-2">{r.loanType}</td>
-            <td className="p-2">{r.disbursedAt}</td>
-            <td className="p-2 text-right">{formatNaira(r.interestAmount)}</td>
+    <div className="space-y-2">
+      <div className="flex justify-end gap-3">
+        <a href={apiUrl(`/api/admin/income-report/interest-loans/export.xlsx?${query}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+          Download (Excel)
+        </a>
+        <a href={apiUrl(`/api/admin/income-report/interest-loans/export.pdf?${query}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+          Download (PDF)
+        </a>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[var(--muted)]">
+            <th className="p-2">Regno</th>
+            <th className="p-2">Name</th>
+            <th className="p-2">Loan code</th>
+            <th className="p-2">Loan type</th>
+            <th className="p-2">Disbursed</th>
+            <th className="p-2 text-right">Interest</th>
           </tr>
-        ))}
-        {rows.length === 0 && <tr><td colSpan={6} className="p-2 text-center text-[var(--muted)]">No transactions.</td></tr>}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-[var(--line)]">
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="p-2">{r.regno}</td>
+              <td className="p-2">{r.fullName}</td>
+              <td className="p-2">{r.loanCode ?? "-"}</td>
+              <td className="p-2">{r.loanType}</td>
+              <td className="p-2">{r.disbursedAt}</td>
+              <td className="p-2 text-right">{formatNaira(r.interestAmount)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && <tr><td colSpan={6} className="p-2 text-center text-[var(--muted)]">No transactions.</td></tr>}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -105,29 +118,39 @@ function LedgerTransactionsTable({ since, endpoint }: { since: string; endpoint:
   if (!rows) return <p className="text-xs text-[var(--muted)] p-2">Loading...</p>;
 
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-left text-[var(--muted)]">
-          <th className="p-2">Regno</th>
-          <th className="p-2">Name</th>
-          <th className="p-2">Date</th>
-          <th className="p-2">Description</th>
-          <th className="p-2 text-right">Amount</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-[var(--line)]">
-        {rows.map((r, i) => (
-          <tr key={i}>
-            <td className="p-2">{r.regno}</td>
-            <td className="p-2">{r.fullName}</td>
-            <td className="p-2">{r.date}</td>
-            <td className="p-2">{r.description}</td>
-            <td className="p-2 text-right">{formatNaira(r.amount)}</td>
+    <div className="space-y-2">
+      <div className="flex justify-end gap-3">
+        <a href={apiUrl(`${endpoint}/export.xlsx?since=${since}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+          Download (Excel)
+        </a>
+        <a href={apiUrl(`${endpoint}/export.pdf?since=${since}`)} className="text-xs text-[var(--maroon)] hover:underline font-medium">
+          Download (PDF)
+        </a>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[var(--muted)]">
+            <th className="p-2">Regno</th>
+            <th className="p-2">Name</th>
+            <th className="p-2">Date</th>
+            <th className="p-2">Description</th>
+            <th className="p-2 text-right">Amount</th>
           </tr>
-        ))}
-        {rows.length === 0 && <tr><td colSpan={5} className="p-2 text-center text-[var(--muted)]">No transactions.</td></tr>}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-[var(--line)]">
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="p-2">{r.regno}</td>
+              <td className="p-2">{r.fullName}</td>
+              <td className="p-2">{r.date}</td>
+              <td className="p-2">{r.description}</td>
+              <td className="p-2 text-right">{formatNaira(r.amount)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && <tr><td colSpan={5} className="p-2 text-center text-[var(--muted)]">No transactions.</td></tr>}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -170,9 +193,9 @@ function AdminIncomeReportContent() {
       <h1 className="text-2xl font-bold text-[var(--maroon-dark)]">Income report</h1>
       <p className="text-sm text-[var(--muted)] max-w-2xl">
         The cooperative&rsquo;s own income for FY {current.fiscalYearLabel} alongside FY {previous.fiscalYearLabel} for
-        quick comparison - interest booked on loans at disbursement, the admin fee on loan liquidations, and
-        the COT deducted on membership withdrawals. Click &ldquo;View&rdquo; under any figure to see exactly
-        what makes it up.
+        quick comparison - interest booked on loans at disbursement, the admin fee on loan liquidations, the
+        COT deducted on membership withdrawals, and the fee charged on every loan application (sale of
+        application forms). Click &ldquo;View&rdquo; under any figure to see exactly what makes it up.
       </p>
 
       <div className="card overflow-x-auto max-w-3xl">
@@ -232,7 +255,7 @@ function AdminIncomeReportContent() {
             )}
 
             <tr>
-              <td className="p-3">Admin charge on withdrawal (COT)</td>
+              <td className="p-3">Commission on Turnover (COT)</td>
               <AmountCell amount={previous.withdrawalCot} onView={() => toggle({ kind: "withdrawal", since: previous.since })} active={!!expanded && expanded.kind === "withdrawal" && expanded.since === previous.since} />
               <AmountCell amount={current.withdrawalCot} onView={() => toggle({ kind: "withdrawal", since: current.since })} active={!!expanded && expanded.kind === "withdrawal" && expanded.since === current.since} />
             </tr>
@@ -241,6 +264,21 @@ function AdminIncomeReportContent() {
                 <td colSpan={3} className="p-0">
                   <div className="bg-[var(--maroon-light)]/20 p-2">
                     <LedgerTransactionsTable since={expanded.since} endpoint="/api/admin/income-report/withdrawal-cot" />
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            <tr>
+              <td className="p-3">Sale of Application Forms</td>
+              <AmountCell amount={previous.applicationFormSales} onView={() => toggle({ kind: "formSales", since: previous.since })} active={!!expanded && expanded.kind === "formSales" && expanded.since === previous.since} />
+              <AmountCell amount={current.applicationFormSales} onView={() => toggle({ kind: "formSales", since: current.since })} active={!!expanded && expanded.kind === "formSales" && expanded.since === current.since} />
+            </tr>
+            {expanded && expanded.kind === "formSales" && (
+              <tr>
+                <td colSpan={3} className="p-0">
+                  <div className="bg-[var(--maroon-light)]/20 p-2">
+                    <LedgerTransactionsTable since={expanded.since} endpoint="/api/admin/income-report/application-form-sales" />
                   </div>
                 </td>
               </tr>

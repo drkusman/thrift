@@ -30,5 +30,5 @@ public class LedgerEntry {
 
     public enum TransCat { SAVINGS, LOAN, INTEREST, FEES, OTHER }
     public enum DrCr { DR, CR }
-    public enum LedgerSource { LEGACY_IMPORT, MONTHLY_UPLOAD, LOAN_DISBURSEMENT, LOAN_REPAYMENT, MANUAL_ADMIN }
+    public enum LedgerSource { LEGACY_IMPORT, MONTHLY_UPLOAD, LOAN_DISBURSEMENT, LOAN_REPAYMENT, LOAN_APPLICATION, MANUAL_ADMIN }
 }

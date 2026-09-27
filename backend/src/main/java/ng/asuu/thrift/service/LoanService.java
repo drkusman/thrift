@@ -30,6 +30,12 @@ import java.util.UUID;
  */
 @Service
 public class LoanService {
+    /** Karim's own rule: every loan application charges this, debited from the applicant's savings and
+     *  booked as "Sale of Application Forms" income (see IncomeReportService) - matches the flat 500 the
+     *  legacy system charged under the same transType, "LAF" ("Online Loan Application Fees"). Charged at
+     *  submission regardless of the eventual decision - it's the cost of applying, not of being approved. */
+    private static final long APPLICATION_FEE = 500;
+
     private final LoanRepository loanRepository;
     private final LoanRepaymentScheduleRepository scheduleRepository;
     private final LoanTypeService loanTypeService;
@@ -132,7 +138,12 @@ public class LoanService {
         loan.setGuarantorOneStatus(initialGuarantorStatus);
         loan.setGuarantorTwoStatus(initialGuarantorStatus);
         loan.setStatus(LoanStatus.PENDING);
-        return loanRepository.save(loan);
+        loan = loanRepository.save(loan);
+
+        ledgerService.post(member.getId(), APPLICATION_FEE, LocalDate.now(), "Online Loan Application Fees",
+                "LAF", TransCat.SAVINGS, DrCr.DR, loan.getId(), LedgerSource.LOAN_APPLICATION, member.getId());
+
+        return loan;
     }
 
     /** Catches a re-submitted application before it's created - same member, type, amount, and pair of

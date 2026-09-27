@@ -45,6 +45,10 @@ import java.util.Set;
  *       apply at any time to have their accumulated interest paid out. The admin pays them externally
  *       (bank transfer) then uploads that same amount here as an IOS2 debit, removing it from their
  *       savings since it's no longer sitting in the thrift account.
+ *   <li>LAF (or LOAN APPLICATION FEE, APPLICATION FEE, SALE OF APPLICATION FORMS) - a single savings
+ *       debit, transType LAF. See also uploadLoanApplicationFees()/loanApplicationFeeTemplate() - a
+ *       dedicated module for this same posting, since most application fees are collected offline in one
+ *       batch rather than mixed into the general Monthly Upload file.
  *   <li>Anything else (including SAVINGS, or a blank cell) - the complex case: the amount is a single
  *       lump sum that pays the member's own standing monthly savings first, then whatever's left is
  *       applied one loan at a time (oldest disbursed first) to each RUNNING loan's own repayment plan,
@@ -72,6 +76,8 @@ public class MonthlyContributionService {
     private static final Set<String> REFUND_OVER_DEDUCTION_KINDS = Set.of("REFUND", "OVER DEDUCTION", "REFUND OF OVER DEDUCTION");
     private static final Set<String> IOS1_KINDS = Set.of("IOS1", "INTEREST ON SAVINGS");
     private static final Set<String> IOS2_KINDS = Set.of("IOS2", "PAYMENT OF DIVIDEND");
+    private static final Set<String> LOAN_APPLICATION_FEE_KINDS =
+            Set.of("LAF", "LOAN APPLICATION FEE", "APPLICATION FEE", "SALE OF APPLICATION FORMS");
 
     private final MonthlyContributionBatchRepository batchRepository;
     private final MonthlyContributionBatchRowRepository rowRepository;
@@ -225,6 +231,9 @@ public class MonthlyContributionService {
                                 "IOS2", TransCat.SAVINGS, DrCr.DR, null, LedgerSource.MONTHLY_UPLOAD, admin.getId());
                         Long resolvedRequestId = iosPayoutService.autoResolveOnUpload(memberId, amount, admin.getId());
                         savePosting(batchRow.getId(), entry.getId(), null, amount, resolvedRequestId);
+                    } else if (LOAN_APPLICATION_FEE_KINDS.contains(kindUpper)) {
+                        postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                                "LAF", "Online Loan Application Fees", DrCr.DR, batchRow.getId());
                     } else {
                         allocateSavings(admin, memberId, amount, periodMonth, postDate, batchRow.getId());
                     }
@@ -251,6 +260,7 @@ public class MonthlyContributionService {
         if (REFUND_OVER_DEDUCTION_KINDS.contains(kindUpper)) return false;
         if (IOS1_KINDS.contains(kindUpper)) return false;
         if (IOS2_KINDS.contains(kindUpper)) return false;
+        if (LOAN_APPLICATION_FEE_KINDS.contains(kindUpper)) return false;
         return true;
     }
 
@@ -463,6 +473,123 @@ public class MonthlyContributionService {
             Row note = sheet.createRow(3);
             note.createCell(0).setCellValue("KIND is SAVINGS, LOAN_REPAYMENT, CASH DEPOSIT, REFUND OF OVER DEDUCTION, " +
                     "IOS1, or IOS2 (default SAVINGS if left blank). SN and NAME are for readability only - only REGNO and AMOUNT are used to post the entry.");
+
+            for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+
+            wb.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    /**
+     * Karim's own explanation: most application fees are paid offline (cash, at the office) rather than
+     * through a member's own online application - LoanService.createApplication() only ever captures the
+     * online ones automatically. This is the dedicated module for the offline majority: admin uploads a
+     * simple regno/amount sheet (no KIND column needed, every row always posts as LAF) once they've
+     * collected a batch of offline payments, so the income report's "Sale of Application Forms" figure
+     * reflects the true total rather than just what happened to be paid online. Never locks the period -
+     * these are ad-hoc events like Cash Deposit/IOS, not a once-per-period payroll file - and reuses the
+     * exact same batch/row/posting tables as the general Monthly Upload, so deleteBatch() reverses it
+     * identically.
+     */
+    @Transactional
+    public MonthlyContributionBatch uploadLoanApplicationFees(Member admin, String periodMonth, MultipartFile file) throws IOException {
+        byte[] fileBytes = file.getBytes();
+        Map<String, Long> memberIdByRegno = new HashMap<>();
+        for (Member m : memberRepository.findAll()) memberIdByRegno.put(m.getRegno(), m.getId());
+
+        MonthlyContributionBatch batch = new MonthlyContributionBatch();
+        batch.setPeriodMonth(periodMonth);
+        batch.setFileName(file.getOriginalFilename());
+        batch.setUploadedBy(admin.getId());
+        batch.setFileBytes(fileBytes);
+        batch.setLocksPeriod(false);
+        batch = batchRepository.save(batch);
+
+        int total = 0, matched = 0;
+        long totalAmount = 0;
+
+        try (InputStream in = new ByteArrayInputStream(fileBytes); Workbook wb = WorkbookFactory.create(in)) {
+            Sheet sheet = wb.getSheetAt(0);
+            Row header = sheet.getRow(0);
+            int regnoCol = -1, amountCol = -1;
+            for (Cell c : header) {
+                String h = c.getStringCellValue().trim().toLowerCase();
+                if (h.equals("regno")) regnoCol = c.getColumnIndex();
+                else if (h.equals("amount")) amountCol = c.getColumnIndex();
+            }
+            if (regnoCol < 0 || amountCol < 0) {
+                throw new IllegalArgumentException("Sheet must have 'regno' and 'amount' columns");
+            }
+
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+                String regno = stringOf(row.getCell(regnoCol));
+                if (regno == null || regno.isBlank()) continue;
+                total++;
+
+                MonthlyContributionBatchRow batchRow = new MonthlyContributionBatchRow();
+                batchRow.setBatchId(batch.getId());
+                batchRow.setRegno(regno);
+                batchRow.setKind("LAF");
+
+                double amountVal = numericOf(row.getCell(amountCol));
+                long amount = Math.round(amountVal);
+                batchRow.setAmount(amount);
+
+                Long memberId = memberIdByRegno.get(regno);
+                if (memberId == null) {
+                    batchRow.setMatched(false);
+                    batchRow.setErrorMessage("No member with regno " + regno);
+                    rowRepository.save(batchRow);
+                } else {
+                    batchRow = rowRepository.save(batchRow);
+                    LocalDate postDate = lastDayOfMonth(periodMonth);
+                    postSimpleSavingsEntry(admin, memberId, amount, postDate, periodMonth,
+                            "LAF", "Online Loan Application Fees", DrCr.DR, batchRow.getId());
+                    batchRow.setMatched(true);
+                    rowRepository.save(batchRow);
+                    matched++;
+                    totalAmount += amount;
+                }
+            }
+        }
+
+        batch.setTotalRows(total);
+        batch.setMatchedRows(matched);
+        batch.setTotalAmount(totalAmount);
+        return batchRepository.save(batch);
+    }
+
+    /** Blank sheet for admin to fill in: SN/NAME are for readability only - only regno and amount need
+     *  filling in for a loan application fee sale, since every row always posts as LAF. */
+    public byte[] loanApplicationFeeTemplate() throws IOException {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Application Form Sales");
+
+            Font boldFont = wb.createFont();
+            boldFont.setBold(true);
+            CellStyle headerStyle = wb.createCellStyle();
+            headerStyle.setFont(boldFont);
+
+            String[] headers = {"SN", "REGNO", "NAME", "AMOUNT"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell c = header.createCell(i);
+                c.setCellValue(headers[i]);
+                c.setCellStyle(headerStyle);
+            }
+
+            Row example = sheet.createRow(1);
+            example.createCell(0).setCellValue(1);
+            example.createCell(1).setCellValue("A00123");
+            example.createCell(2).setCellValue("JOHN DOE");
+            example.createCell(3).setCellValue(500);
+
+            Row note = sheet.createRow(3);
+            note.createCell(0).setCellValue("Every row here posts as a Loan Application Fee (LAF) sale, whatever amount was actually " +
+                    "collected offline - SN and NAME are for readability only, only REGNO and AMOUNT are used to post the entry.");
 
             for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
 

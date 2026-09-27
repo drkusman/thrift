@@ -34,6 +34,7 @@ const STAFF_LINKS = [
       { href: "/admin/loans/manager", label: "Loan Manager" },
       { href: "/admin/loans/liquidation-requests", label: "Liquidation requests" },
       { href: "/admin/contributions", label: "Monthly Upload" },
+      { href: "/admin/contributions/loan-application-fees", label: "Loan Application Fee Upload" },
     ],
   },
   { href: "/admin/savings-requests", label: "Savings requests", icon: IconSavings },

@@ -61,6 +61,19 @@ public class AdminContributionController {
         return new Summary(batch.getId(), batch.getTotalRows(), batch.getMatchedRows(), batch.getTotalAmount());
     }
 
+    @GetMapping("/laf-template.xlsx")
+    public ResponseEntity<byte[]> lafTemplate() throws IOException {
+        return FileDownload.excel(monthlyContributionService.loanApplicationFeeTemplate(), "loan-application-fee-template.xlsx");
+    }
+
+    @PostMapping(value = "/laf-upload", consumes = "multipart/form-data")
+    public Summary uploadLoanApplicationFees(@AuthenticationPrincipal MemberPrincipal admin,
+                                              @RequestParam String periodMonth,
+                                              @RequestParam MultipartFile file) throws IOException {
+        var batch = monthlyContributionService.uploadLoanApplicationFees(admin.getMember(), periodMonth, file);
+        return new Summary(batch.getId(), batch.getTotalRows(), batch.getMatchedRows(), batch.getTotalAmount());
+    }
+
     public record Summary(Long batchId, int totalRows, int matchedRows, long totalAmount) {}
 
     public record BatchDto(Long id, String periodMonth, String fileName, String uploadedAt,
