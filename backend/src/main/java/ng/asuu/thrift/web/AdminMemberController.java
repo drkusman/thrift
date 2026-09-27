@@ -43,9 +43,8 @@ public class AdminMemberController {
 
     @PostMapping
     public MemberView register(@Valid @RequestBody RegisterMemberRequest req) {
-        MemberRole role = req.role() == null || req.role().isBlank() ? MemberRole.MEMBER : MemberRole.valueOf(req.role());
         return MemberView.of(memberService.register(req.regno(), req.fullName(), req.phone(), req.email(), req.sex(),
-                req.deptCode(), req.factCode(), req.payPoint(), role));
+                req.deptCode(), req.factCode(), req.payPoint(), req.monthlySavingsAmount(), req.bankId(), req.accountNo()));
     }
 
     @PostMapping("/{id}/reset-password")

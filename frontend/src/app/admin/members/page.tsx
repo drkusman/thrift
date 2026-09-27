@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
+import { BankSearchSelect } from "@/components/BankSearchSelect";
 import { api, apiUrl, ApiError } from "@/lib/api";
-import { Member } from "@/lib/types";
+import { Bank, Member } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
 
@@ -15,20 +16,34 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [deptCode, setDeptCode] = useState("");
-  const [role, setRole] = useState("MEMBER");
+  const [monthlySavingsAmount, setMonthlySavingsAmount] = useState("20000");
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [bankId, setBankId] = useState<number | "">("");
+  const [accountNo, setAccountNo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open && banks.length === 0) api.get<Bank[]>("/api/banks").then(setBanks);
+  }, [open, banks.length]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     await guard(async () => {
       setError(null); setMsg(null);
+      const amount = Number(monthlySavingsAmount);
+      if (!amount || amount < 20000) { setError("Monthly savings must be at least ₦20,000."); return; }
+      if (accountNo && !/^\d{10}$/.test(accountNo)) { setError("Account number must be exactly 10 digits."); return; }
       try {
-        const m = await api.post<Member>("/api/admin/members", { regno, fullName, phone, email, deptCode, role });
+        const m = await api.post<Member>("/api/admin/members", {
+          regno, fullName, phone, email, deptCode,
+          monthlySavingsAmount: amount, bankId: bankId || null, accountNo: accountNo || null,
+        });
         onRegistered(m);
         setMsg(`Registered. Default password is the reg. number: ${m.regno}`);
-        setRegno(""); setFullName(""); setPhone(""); setEmail(""); setDeptCode(""); setRole("MEMBER");
+        setRegno(""); setFullName(""); setPhone(""); setEmail(""); setDeptCode("");
+        setMonthlySavingsAmount("20000"); setBankId(""); setAccountNo("");
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Could not register member.");
       }
@@ -69,12 +84,28 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
           <input value={deptCode} onChange={(e) => setDeptCode(e.target.value)} className="field-input" />
         </div>
         <div>
-          <label className="field-label">Role</label>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="field-input">
-            <option value="MEMBER">Member</option>
-            <option value="FIN_SEC">Fin. Secretary</option>
-            <option value="ADMIN">Admin</option>
-          </select>
+          <label className="field-label">Monthly savings</label>
+          <input
+            type="number" min={20000} step={1000}
+            value={monthlySavingsAmount}
+            onChange={(e) => setMonthlySavingsAmount(e.target.value)}
+            required
+            className="field-input"
+          />
+        </div>
+        <div>
+          <label className="field-label">Bank</label>
+          <BankSearchSelect options={banks} value={bankId} onChange={setBankId} />
+        </div>
+        <div>
+          <label className="field-label">Account number</label>
+          <input
+            value={accountNo}
+            onChange={(e) => setAccountNo(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            inputMode="numeric"
+            maxLength={10}
+            className="field-input"
+          />
         </div>
       </div>
       {error && <p className="alert-error">{error}</p>}

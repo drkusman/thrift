@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record RegisterMemberRequest(
         @NotBlank String regno, @NotBlank String fullName, String phone, String email, String sex,
-        String deptCode, String factCode, String payPoint, String role
+        String deptCode, String factCode, String payPoint,
+        long monthlySavingsAmount, Long bankId, String accountNo
 ) {
 }

@@ -47,11 +47,17 @@ public class MemberService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
     }
 
+    /** New members always start as MEMBER - promoting to FIN_SEC/ADMIN is a separate, deliberate action
+     *  (see setRole()), not something to pick while filling in a registration form. */
     @Transactional
     public Member register(String regno, String fullName, String phone, String email, String sex,
-                            String deptCode, String factCode, String payPoint, MemberRole role) {
+                            String deptCode, String factCode, String payPoint,
+                            long monthlySavingsAmount, Long bankId, String accountNo) {
         if (memberRepository.existsByRegno(regno)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A member with regno " + regno + " already exists");
+        }
+        if (monthlySavingsAmount < 20000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Monthly savings must be at least ₦20,000");
         }
         Member m = new Member();
         m.setRegno(regno);
@@ -62,9 +68,11 @@ public class MemberService {
         m.setDeptCode(deptCode);
         m.setFactCode(factCode);
         m.setPayPoint(payPoint);
-        m.setRole(role == null ? MemberRole.MEMBER : role);
+        m.setRole(MemberRole.MEMBER);
         m.setStatus(MemberStatus.ACTIVE);
-        m.setMonthlySavingsAmount(20000);
+        m.setMonthlySavingsAmount(monthlySavingsAmount);
+        m.setBankId(bankId);
+        m.setAccountNo(accountNo);
         m.setPasswordHash(passwordEncoder.encode(regno));
         m.setMustChangePassword(true);
         return memberRepository.save(m);
