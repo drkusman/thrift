@@ -89,6 +89,7 @@ function DashboardContent() {
       <div className="flex gap-3 flex-wrap">
         <Link href="/dashboard/loans" className="btn btn-primary">Apply for a loan</Link>
         <Link href="/dashboard/settings" className="btn btn-secondary">Update savings / bank details</Link>
+        <a href="/user-manual.pdf" download className="btn btn-secondary">Download user manual (PDF)</a>
       </div>
 
       <div>

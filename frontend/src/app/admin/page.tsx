@@ -178,6 +178,10 @@ function AdminOverviewContent() {
         <h1 className="text-2xl font-semibold mt-1">Cooperative overview</h1>
       </div>
 
+      <a href="/admin-user-manual.pdf" download className="btn btn-secondary inline-block">
+        Download admin manual (PDF)
+      </a>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Link href="/admin/members" className="stat-tile block hover:shadow-[var(--shadow-lg)] transition-shadow">
           <p className="stat-label">Members</p>
