@@ -56,10 +56,10 @@ const STAFF_LINKS = [
     ],
   },
   { href: "/admin/announcements", label: "Announcements", icon: IconSavings },
-  { href: "/admin/import", label: "Legacy import", icon: IconImport },
+  { href: "/admin/import", label: "Legacy import", icon: IconImport, adminOnly: true },
 ];
 
-type NavLink = { href: string; label: string; icon?: (p: { className?: string }) => React.ReactElement; exact?: boolean };
+type NavLink = { href: string; label: string; icon?: (p: { className?: string }) => React.ReactElement; exact?: boolean; adminOnly?: boolean };
 type NavGroup = { label: string; icon: (p: { className?: string }) => React.ReactElement; children: NavLink[] };
 type NavItem = NavLink | NavGroup;
 
@@ -122,8 +122,10 @@ export function Sidebar() {
   // Admins and Fin. Secretaries are members of the thrift too - they get their own savings/loans
   // dashboard on top of the admin tools, not instead of it.
   const isStaff = member.role === "ADMIN" || member.role === "FIN_SEC";
+  const isAdmin = member.role === "ADMIN";
+  const staffLinks = isAdmin ? STAFF_LINKS : STAFF_LINKS.filter((item) => !("adminOnly" in item && item.adminOnly));
   const groups = isStaff
-    ? [{ label: "My account", links: MEMBER_LINKS }, { label: "Administration", links: STAFF_LINKS }]
+    ? [{ label: "My account", links: MEMBER_LINKS }, { label: "Administration", links: staffLinks }]
     : [{ label: null, links: MEMBER_LINKS }];
 
   async function onLogout() {

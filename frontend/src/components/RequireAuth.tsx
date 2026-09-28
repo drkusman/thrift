@@ -5,19 +5,29 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./Sidebar";
 
-export function RequireAuth({ staffOnly = false, children }: { staffOnly?: boolean; children: React.ReactNode }) {
+export function RequireAuth({
+  staffOnly = false,
+  adminOnly = false,
+  children,
+}: {
+  staffOnly?: boolean;
+  adminOnly?: boolean;
+  children: React.ReactNode;
+}) {
   const { member, loading } = useAuth();
   const router = useRouter();
   const isStaff = member?.role === "ADMIN" || member?.role === "FIN_SEC";
+  const isAdmin = member?.role === "ADMIN";
+  const denied = (staffOnly && !isStaff) || (adminOnly && !isAdmin);
 
   useEffect(() => {
     if (loading) return;
     if (!member) { router.push("/login"); return; }
     if (member.mustChangePassword) { router.push("/change-password"); return; }
-    if (staffOnly && !isStaff) { router.push("/dashboard"); return; }
-  }, [loading, member, isStaff, staffOnly, router]);
+    if (denied) { router.push("/dashboard"); return; }
+  }, [loading, member, denied, router]);
 
-  if (loading || !member || member.mustChangePassword || (staffOnly && !isStaff)) {
+  if (loading || !member || member.mustChangePassword || denied) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-[var(--muted)] bg-[var(--bg)]">
         Loading...

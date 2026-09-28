@@ -23,6 +23,13 @@ final class FileDownload {
                 .body(bytes);
     }
 
+    static ResponseEntity<byte[]> sql(byte[] bytes, String filename) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/sql"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(bytes);
+    }
+
     /** For re-serving a file exactly as it was originally uploaded (e.g. a saved workbook), whose type
      *  isn't necessarily xlsx (an admin could've uploaded .xls) - the filename's own extension is what
      *  tells the browser what to do with it. */
