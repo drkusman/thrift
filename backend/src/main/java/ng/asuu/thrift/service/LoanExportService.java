@@ -38,8 +38,8 @@ public class LoanExportService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
     private static final float PAGE_WIDTH = PDRectangle.A4.getHeight();
     private static final float PAGE_HEIGHT = PDRectangle.A4.getWidth();
-    private static final String[] COLUMNS = {"S/N", "Member", "Amount", "Applied", "Guarantor 1", "Guarantor 2", "Remark"};
-    private static final float[] COL_WIDTHS = {30, 150, 70, 65, 165, 165, 110};
+    private static final String[] COLUMNS = {"S/N", "Member", "Equity", "Amount", "Applied", "Guarantor 1", "Guarantor 2", "Remark"};
+    private static final float[] COL_WIDTHS = {30, 140, 65, 65, 60, 145, 145, 90};
 
     private final byte[] logoBytes;
 
@@ -49,19 +49,19 @@ public class LoanExportService {
         }
     }
 
-    public byte[] toExcel(List<Loan> loans, List<LoanType> loanTypes, Map<Long, Member> membersById) throws IOException {
+    public byte[] toExcel(List<Loan> loans, List<LoanType> loanTypes, Map<Long, Member> membersById, Map<Long, Long> equityByMember) throws IOException {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             int pictureIdx = wb.addPicture(logoBytes, Workbook.PICTURE_TYPE_JPEG);
             for (LoanType type : loanTypes) {
                 List<Loan> ofType = sortedAscending(loans.stream().filter(l -> type.getId().equals(l.getLoanTypeId())).toList());
-                writeSheet(wb, pictureIdx, type.getName(), ofType, membersById);
+                writeSheet(wb, pictureIdx, type.getName(), ofType, membersById, equityByMember);
             }
             wb.write(out);
             return out.toByteArray();
         }
     }
 
-    private void writeSheet(XSSFWorkbook wb, int pictureIdx, String sheetName, List<Loan> loans, Map<Long, Member> membersById) {
+    private void writeSheet(XSSFWorkbook wb, int pictureIdx, String sheetName, List<Loan> loans, Map<Long, Member> membersById, Map<Long, Long> equityByMember) {
         Sheet sheet = wb.createSheet(sheetName);
 
         XSSFDrawing drawing = (XSSFDrawing) sheet.createDrawingPatriarch();
@@ -112,13 +112,17 @@ public class LoanExportService {
             snCell.setCellValue(sn++);
             snCell.setCellStyle(cellStyle);
             setCell(row, 1, memberCell(l, membersById), cellStyle);
-            Cell amountCell = row.createCell(2);
+            Cell equityCell = row.createCell(2);
+            Long equity = equityByMember.get(l.getMemberId());
+            equityCell.setCellValue(equity == null ? 0 : equity);
+            equityCell.setCellStyle(numberStyle);
+            Cell amountCell = row.createCell(3);
             amountCell.setCellValue(l.getRequestedAmount());
             amountCell.setCellStyle(numberStyle);
-            setCell(row, 3, l.getAppliedAt() == null ? "" : l.getAppliedAt().toLocalDate().format(DATE_FMT), cellStyle);
-            setCell(row, 4, guarantorCell(l, true, membersById), cellStyle);
-            setCell(row, 5, guarantorCell(l, false, membersById), cellStyle);
-            setCell(row, 6, "", cellStyle);
+            setCell(row, 4, l.getAppliedAt() == null ? "" : l.getAppliedAt().toLocalDate().format(DATE_FMT), cellStyle);
+            setCell(row, 5, guarantorCell(l, true, membersById), cellStyle);
+            setCell(row, 6, guarantorCell(l, false, membersById), cellStyle);
+            setCell(row, 7, "", cellStyle);
         }
         if (loans.isEmpty()) {
             Row row = sheet.createRow(r);
@@ -142,14 +146,14 @@ public class LoanExportService {
         style.setBorderRight(BorderStyle.THIN);
     }
 
-    public byte[] toPdf(List<Loan> loans, List<LoanType> loanTypes, Map<Long, Member> membersById) throws IOException {
+    public byte[] toPdf(List<Loan> loans, List<LoanType> loanTypes, Map<Long, Member> membersById, Map<Long, Long> equityByMember) throws IOException {
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDImageXObject logo = PDImageXObject.createFromByteArray(doc, logoBytes, "logo");
             PdfCursor cursor = new PdfCursor(doc, logo);
             for (LoanType type : loanTypes) {
                 List<Loan> ofType = sortedAscending(loans.stream().filter(l -> type.getId().equals(l.getLoanTypeId())).toList());
                 cursor.sectionHeading(type.getName() + " Applications");
-                cursor.table(ofType, membersById);
+                cursor.table(ofType, membersById, equityByMember);
             }
             cursor.close();
 
@@ -168,7 +172,7 @@ public class LoanExportService {
         if (guarantorId == null) return "-";
         Member g = membersById.get(guarantorId);
         GuaranteeStatus status = first ? l.getGuarantorOneStatus() : l.getGuarantorTwoStatus();
-        String name = g == null ? ("#" + guarantorId) : g.getFullName() + " (" + g.getRegno() + ")";
+        String name = g == null ? ("#" + guarantorId) : g.getFullName();
         return name + " - " + status.name();
     }
 
@@ -232,7 +236,7 @@ public class LoanExportService {
             y -= 10;
         }
 
-        void table(List<Loan> loans, Map<Long, Member> membersById) throws IOException {
+        void table(List<Loan> loans, Map<Long, Member> membersById, Map<Long, Long> equityByMember) throws IOException {
             if (loans.isEmpty()) {
                 y -= ROW_HEIGHT;
                 cs.setFont(regular, 9);
@@ -250,9 +254,11 @@ public class LoanExportService {
                     headerNeeded = false;
                 }
 
+                Long equity = equityByMember.get(l.getMemberId());
                 String[] values = {
                         String.valueOf(sn++),
                         safe(memberCell(l, membersById), 26),
+                        formatAmount(equity == null ? 0 : equity),
                         formatAmount(l.getRequestedAmount()),
                         l.getAppliedAt() == null ? "" : l.getAppliedAt().toLocalDate().format(DATE_FMT),
                         safe(guarantorCell(l, true, membersById), 32),
@@ -282,7 +288,7 @@ public class LoanExportService {
 
             cs.setFont(header ? bold : regular, 8);
             for (int i = 0; i < COLUMNS.length; i++) {
-                boolean numeric = i == 2;
+                boolean numeric = i == 2 || i == 3;
                 String v = values[i];
                 float colWidth = COL_WIDTHS[i];
                 float textWidth = (header ? bold : regular).getStringWidth(v) / 1000 * 8;

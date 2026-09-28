@@ -53,6 +53,9 @@ export type Loan = {
   guarantorTwoId: number | null;
   guarantorOneStatus: "PENDING" | "ACCEPTED" | "REJECTED";
   guarantorTwoStatus: "PENDING" | "ACCEPTED" | "REJECTED";
+  /** The applicant's own current savings-minus-loan-balance - only populated on the pending-applications
+   *  list (see AdminLoanController.pending()), null everywhere else. */
+  applicantEquity: number | null;
 };
 
 export type LiquidationPreview = {

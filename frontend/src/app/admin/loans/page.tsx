@@ -307,6 +307,12 @@ function AdminLoansContent() {
                 <p className="font-semibold text-[var(--ink)]">
                   {member ? `${member.fullName} (${member.regno})` : `Member #${l.memberId}`} &middot; {type?.name ?? ""}
                 </p>
+                <p className="text-sm mt-0.5">
+                  <span className="text-[var(--muted)]">Current equity: </span>
+                  <span className={`font-semibold ${l.applicantEquity != null && l.applicantEquity < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                    {l.applicantEquity != null ? formatNaira(l.applicantEquity) : "-"}
+                  </span>
+                </p>
                 <p className="text-sm text-[var(--muted)] flex items-center gap-1.5 flex-wrap">
                   Requested {formatNaira(l.requestedAmount)}
                   <span className="mx-1">&middot;</span>

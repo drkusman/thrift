@@ -14,6 +14,7 @@ import ng.asuu.thrift.service.LoanListExportService;
 import ng.asuu.thrift.service.LoanLiquidationService;
 import ng.asuu.thrift.service.LoanService;
 import ng.asuu.thrift.service.LoanTypeService;
+import ng.asuu.thrift.service.MemberBalanceReportService;
 import ng.asuu.thrift.service.MemberService;
 import ng.asuu.thrift.service.TransactionExportService;
 import ng.asuu.thrift.web.dto.AdminLoanApplicationRequest;
@@ -47,6 +48,7 @@ public class AdminLoanController {
     private final LoanLiquidationService loanLiquidationService;
     private final LedgerService ledgerService;
     private final TransactionExportService transactionExportService;
+    private final MemberBalanceReportService memberBalanceReportService;
 
     public AdminLoanController(LoanService loanService, LoanTypeService loanTypeService,
                                 MemberService memberService, LoanExportService loanExportService,
@@ -54,7 +56,8 @@ public class AdminLoanController {
                                 LoanBatchApplicationService loanBatchApplicationService,
                                 LoanLiquidationService loanLiquidationService,
                                 LedgerService ledgerService,
-                                TransactionExportService transactionExportService) {
+                                TransactionExportService transactionExportService,
+                                MemberBalanceReportService memberBalanceReportService) {
         this.loanService = loanService;
         this.loanTypeService = loanTypeService;
         this.memberService = memberService;
@@ -64,11 +67,23 @@ public class AdminLoanController {
         this.loanLiquidationService = loanLiquidationService;
         this.ledgerService = ledgerService;
         this.transactionExportService = transactionExportService;
+        this.memberBalanceReportService = memberBalanceReportService;
+    }
+
+    /** Current equity (savings balance minus loan balance) per active member, computed as one bulk
+     *  query - see MemberBalanceReportService - so an admin can judge whether a pending applicant is
+     *  in good standing without 600+ per-member scans. */
+    private Map<Long, Long> equityByMember() {
+        return memberBalanceReportService.report(java.time.LocalDate.now()).stream()
+                .collect(Collectors.toMap(MemberBalanceReportService.Row::memberId, MemberBalanceReportService.Row::netEquity));
     }
 
     @GetMapping("/pending")
     public List<LoanDto> pending() {
-        return loanService.pending().stream().map(LoanDto::of).toList();
+        Map<Long, Long> equity = equityByMember();
+        return loanService.pending().stream()
+                .map(l -> LoanDto.of(l, null, equity.get(l.getMemberId())))
+                .toList();
     }
 
     @GetMapping("/member/{memberId}")
@@ -85,13 +100,13 @@ public class AdminLoanController {
 
     @GetMapping("/export.xlsx")
     public ResponseEntity<byte[]> exportExcel() throws IOException {
-        byte[] bytes = loanExportService.toExcel(loanService.pending(), loanTypeService.findAll(), membersById());
+        byte[] bytes = loanExportService.toExcel(loanService.pending(), loanTypeService.findAll(), membersById(), equityByMember());
         return FileDownload.excel(bytes, "pending-loan-applications.xlsx");
     }
 
     @GetMapping("/export.pdf")
     public ResponseEntity<byte[]> exportPdf() throws IOException {
-        byte[] bytes = loanExportService.toPdf(loanService.pending(), loanTypeService.findAll(), membersById());
+        byte[] bytes = loanExportService.toPdf(loanService.pending(), loanTypeService.findAll(), membersById(), equityByMember());
         return FileDownload.pdf(bytes, "pending-loan-applications.pdf");
     }
 

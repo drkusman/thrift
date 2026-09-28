@@ -57,8 +57,8 @@ public class TransactionExportService {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             int pictureIdx = wb.addPicture(logoBytes, Workbook.PICTURE_TYPE_JPEG);
 
-            writeSheet(wb, pictureIdx, member, "Savings", savings);
-            writeSheet(wb, pictureIdx, member, "Loan", loans);
+            writeSheet(wb, pictureIdx, member, "Savings", savings, false);
+            writeSheet(wb, pictureIdx, member, "Loan", loans, true);
 
             wb.write(out);
             return out.toByteArray();
@@ -70,7 +70,7 @@ public class TransactionExportService {
     public byte[] toExcelForLoan(Member member, Loan loan, List<LedgerEntry> entries) throws IOException {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             int pictureIdx = wb.addPicture(logoBytes, Workbook.PICTURE_TYPE_JPEG);
-            writeSheet(wb, pictureIdx, member, sheetLabel(loan), sortedAscending(entries));
+            writeSheet(wb, pictureIdx, member, sheetLabel(loan), sortedAscending(entries), true);
             wb.write(out);
             return out.toByteArray();
         }
@@ -81,7 +81,7 @@ public class TransactionExportService {
             PDImageXObject logo = PDImageXObject.createFromByteArray(doc, logoBytes, "logo");
             PdfCursor cursor = new PdfCursor(doc, logo);
             cursor.sectionHeading("Loan Statement - " + sheetLabel(loan), member);
-            cursor.table(sortedAscending(entries));
+            cursor.table(sortedAscending(entries), true);
             cursor.close();
             doc.save(out);
             return out.toByteArray();
@@ -94,7 +94,7 @@ public class TransactionExportService {
         return label.length() > 31 ? label.substring(0, 31) : label;
     }
 
-    private void writeSheet(XSSFWorkbook wb, int pictureIdx, Member member, String sheetName, List<LedgerEntry> entries) {
+    private void writeSheet(XSSFWorkbook wb, int pictureIdx, Member member, String sheetName, List<LedgerEntry> entries, boolean isLoan) {
         Sheet sheet = wb.createSheet(sheetName);
 
         XSSFDrawing drawing = (XSSFDrawing) sheet.createDrawingPatriarch();
@@ -151,7 +151,7 @@ public class TransactionExportService {
         long balance = 0;
         int r = headerRowIdx + 1;
         for (LedgerEntry e : entries) {
-            balance += e.getDrCrStatus() == DrCr.CR ? e.getAmount() : -e.getAmount();
+            balance += balanceDelta(e, isLoan);
 
             Row row = sheet.createRow(r++);
             setCell(row, 0, e.getDate().format(DATE_FMT), cellStyle);
@@ -172,6 +172,14 @@ public class TransactionExportService {
             c.setCellStyle(cellStyle);
         }
         for (int i = 0; i < cols.length; i++) sheet.autoSizeColumn(i);
+    }
+
+    /** Savings balance reads naturally as "what you have" (CR/credit builds it up); a loan balance
+     *  reads naturally as "what you owe" (DR/disbursement builds it up, CR/repayment brings it back
+     *  down toward zero) - same running-balance idea, opposite sign convention per Karim's request. */
+    private static long balanceDelta(LedgerEntry e, boolean isLoan) {
+        boolean increases = isLoan ? e.getDrCrStatus() == DrCr.DR : e.getDrCrStatus() == DrCr.CR;
+        return increases ? e.getAmount() : -e.getAmount();
     }
 
     private static void setCell(Row row, int idx, String value, CellStyle style) {
@@ -195,9 +203,9 @@ public class TransactionExportService {
             PDImageXObject logo = PDImageXObject.createFromByteArray(doc, logoBytes, "logo");
             PdfCursor cursor = new PdfCursor(doc, logo);
             cursor.sectionHeading("Savings Statement", member);
-            cursor.table(savings);
+            cursor.table(savings, false);
             cursor.sectionHeading("Loan Statement", member);
-            cursor.table(loans);
+            cursor.table(loans, true);
             cursor.close();
 
             doc.save(out);
@@ -273,7 +281,7 @@ public class TransactionExportService {
             y -= 10;
         }
 
-        void table(List<LedgerEntry> entries) throws IOException {
+        void table(List<LedgerEntry> entries, boolean isLoan) throws IOException {
             if (entries.isEmpty()) {
                 y -= ROW_HEIGHT;
                 cs.setFont(regular, 9);
@@ -291,7 +299,7 @@ public class TransactionExportService {
                     headerNeeded = false;
                 }
 
-                balance += e.getDrCrStatus() == DrCr.CR ? e.getAmount() : -e.getAmount();
+                balance += balanceDelta(e, isLoan);
                 String desc = e.getDescription() == null ? "" : e.getDescription();
                 if (desc.length() > 40) desc = desc.substring(0, 37) + "...";
                 String[] values = {
