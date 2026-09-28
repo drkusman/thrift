@@ -246,6 +246,15 @@ public class LoanService {
 
     @Transactional
     public Loan approve(Member admin, Long loanId, String note) {
+        return approve(admin, loanId, note, null);
+    }
+
+    /** approvedAmount lets the admin grant a different amount than what the member requested -
+     *  a real scenario in the cooperative, though the requested amount is left as-is in most
+     *  approvals (approvedAmount null or absent). When given, it replaces the loan's amount before
+     *  interest/disbursement/repayment are computed, same as if that had been requested originally. */
+    @Transactional
+    public Loan approve(Member admin, Long loanId, String note, Long approvedAmount) {
         Loan loan = require(loanId);
         if (loan.getStatus() != LoanStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a pending loan can be approved");
@@ -253,6 +262,12 @@ public class LoanService {
         if (!loan.bothGuarantorsAccepted()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Both guarantors must accept before this loan can be approved");
+        }
+        if (approvedAmount != null) {
+            if (approvedAmount <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Approved amount must be greater than zero");
+            }
+            loan.setRequestedAmount(approvedAmount);
         }
         LoanType type = loanTypeService.require(loan.getLoanTypeId());
         long requested = loan.getRequestedAmount();

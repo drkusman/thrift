@@ -147,7 +147,8 @@ public class AdminLoanController {
 
     @PostMapping("/{id}/approve")
     public LoanDto approve(@AuthenticationPrincipal MemberPrincipal admin, @PathVariable Long id, @RequestBody(required = false) DecisionRequest req) {
-        return LoanDto.of(loanService.approve(admin.getMember(), id, req == null ? null : req.note()));
+        return LoanDto.of(loanService.approve(admin.getMember(), id,
+                req == null ? null : req.note(), req == null ? null : req.amount()));
     }
 
     @PostMapping("/{id}/reject")

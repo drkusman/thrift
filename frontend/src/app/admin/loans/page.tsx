@@ -235,6 +235,7 @@ function AdminLoansContent() {
   const [loanTypesById, setLoanTypesById] = useState<Record<number, LoanType>>({});
   const [activeMembers, setActiveMembers] = useState<MemberOption[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [amountOverrides, setAmountOverrides] = useState<Record<number, string>>({});
 
   function load() {
     api.get<Loan[]>("/api/admin/loans/pending").then(setLoans);
@@ -255,10 +256,14 @@ function AdminLoansContent() {
     api.get<MemberOption[]>("/api/members/active").then(setActiveMembers);
   }, []);
 
-  async function approve(id: number) {
+  async function approve(id: number, requestedAmount: number) {
     setError(null);
+    const override = amountOverrides[id];
+    const amount = override && override.trim() ? Number(override) : requestedAmount;
+    if (!amount || amount <= 0) { setError("Enter a valid amount to approve."); return; }
     try {
-      await api.post(`/api/admin/loans/${id}/approve`, {});
+      await api.post(`/api/admin/loans/${id}/approve`, { amount });
+      setAmountOverrides((prev) => { const next = { ...prev }; delete next[id]; return next; });
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not approve loan.");
@@ -302,8 +307,24 @@ function AdminLoansContent() {
                 <p className="font-semibold text-[var(--ink)]">
                   {member ? `${member.fullName} (${member.regno})` : `Member #${l.memberId}`} &middot; {type?.name ?? ""}
                 </p>
-                <p className="text-sm text-[var(--muted)]">
-                  {formatNaira(l.requestedAmount)} over {l.durationMonths} months &middot; applied {l.appliedAt?.slice(0, 10)}
+                <p className="text-sm text-[var(--muted)] flex items-center gap-1.5 flex-wrap">
+                  Requested {formatNaira(l.requestedAmount)}
+                  <span className="mx-1">&middot;</span>
+                  <span className="inline-flex items-center gap-1">
+                    Approve for
+                    <span className="relative">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs">&#8358;</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={amountOverrides[l.id] ?? String(l.requestedAmount)}
+                        onChange={(e) => setAmountOverrides((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        className="field-input !py-1 !pl-5 !pr-2 w-28 text-sm"
+                      />
+                    </span>
+                  </span>
+                  <span className="mx-1">&middot;</span>
+                  over {l.durationMonths} months &middot; applied {l.appliedAt?.slice(0, 10)}
                 </p>
                 {l.reason && <p className="text-sm text-[var(--muted)] italic">&ldquo;{l.reason}&rdquo;</p>}
                 <div className="text-xs text-[var(--muted)] mt-1 space-y-0.5">
@@ -322,7 +343,7 @@ function AdminLoansContent() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => approve(l.id)}
+                  onClick={() => approve(l.id, l.requestedAmount)}
                   disabled={!bothAccepted}
                   title={bothAccepted ? undefined : "Both guarantors must accept first"}
                   className="btn btn-gold disabled:opacity-50 disabled:cursor-not-allowed"
