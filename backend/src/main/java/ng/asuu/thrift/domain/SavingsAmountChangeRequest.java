@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-/** A member's requested new monthly savings amount. Amounts <= 70,000 auto-apply immediately (see
+/** A member's requested new monthly savings amount. Amounts <= 100,000 auto-apply immediately (see
  *  SavingsService); amounts above that sit PENDING until an admin approves or rejects them. */
 @Entity @Table(name = "savings_amount_change_requests") @Getter @Setter
 public class SavingsAmountChangeRequest {

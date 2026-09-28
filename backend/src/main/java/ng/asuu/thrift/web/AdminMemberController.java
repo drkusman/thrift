@@ -6,6 +6,7 @@ import ng.asuu.thrift.domain.MemberRole;
 import ng.asuu.thrift.domain.MemberStatus;
 import ng.asuu.thrift.security.MemberPrincipal;
 import ng.asuu.thrift.service.LedgerService;
+import ng.asuu.thrift.service.MemberListExportService;
 import ng.asuu.thrift.service.MemberService;
 import ng.asuu.thrift.service.TransactionExportService;
 import ng.asuu.thrift.web.dto.MemberView;
@@ -24,16 +25,49 @@ public class AdminMemberController {
     private final MemberService memberService;
     private final LedgerService ledgerService;
     private final TransactionExportService exportService;
+    private final MemberListExportService listExportService;
 
-    public AdminMemberController(MemberService memberService, LedgerService ledgerService, TransactionExportService exportService) {
+    public AdminMemberController(MemberService memberService, LedgerService ledgerService,
+            TransactionExportService exportService, MemberListExportService listExportService) {
         this.memberService = memberService;
         this.ledgerService = ledgerService;
         this.exportService = exportService;
+        this.listExportService = listExportService;
     }
 
     @GetMapping
     public List<MemberView> list() {
         return memberService.findAll().stream().map(MemberView::of).toList();
+    }
+
+    /** Mirrors the status/search filtering the Members admin page applies client-side, so the
+     *  Excel/PDF export matches whatever's currently on screen. */
+    private List<Member> filtered(MemberStatus status, String query) {
+        String q = query == null ? "" : query.trim().toLowerCase();
+        return memberService.findAll().stream()
+                .filter(m -> status == null || m.getStatus() == status)
+                .filter(m -> q.isEmpty() || m.getRegno().toLowerCase().contains(q) || m.getFullName().toLowerCase().contains(q))
+                .toList();
+    }
+
+    private static String filterLabel(MemberStatus status) {
+        return status == null ? "All" : status.name();
+    }
+
+    @GetMapping("/export.xlsx")
+    public ResponseEntity<byte[]> exportListExcel(@RequestParam(required = false) MemberStatus status,
+            @RequestParam(required = false) String query) throws IOException {
+        List<Member> members = filtered(status, query);
+        String filename = "members-" + (status == null ? "all" : status.name().toLowerCase()) + ".xlsx";
+        return FileDownload.excel(listExportService.toExcel(members, filterLabel(status)), filename);
+    }
+
+    @GetMapping("/export.pdf")
+    public ResponseEntity<byte[]> exportListPdf(@RequestParam(required = false) MemberStatus status,
+            @RequestParam(required = false) String query) throws IOException {
+        List<Member> members = filtered(status, query);
+        String filename = "members-" + (status == null ? "all" : status.name().toLowerCase()) + ".pdf";
+        return FileDownload.pdf(listExportService.toPdf(members, filterLabel(status)), filename);
     }
 
     @GetMapping("/{id}")

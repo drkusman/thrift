@@ -105,7 +105,7 @@ function SettingsContent() {
         await refresh();
         setRequests((prev) => [req, ...prev]);
         setAmount("");
-        setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦70,000 require approval).");
+        setSavingsMsg(req.status === "APPROVED" ? "Amount updated immediately." : "Request submitted - awaiting admin approval (amounts above ₦100,000 require approval).");
       } catch (e) {
         setSavingsError(e instanceof ApiError ? e.message : "Could not submit request.");
       }
@@ -158,7 +158,7 @@ function SettingsContent() {
       <form onSubmit={onRequestSavings} className="card p-6 space-y-4">
         <h2 className="font-semibold text-[var(--ink)]">Monthly savings amount</h2>
         <p className="text-sm text-[var(--muted)]">
-          Current: {member ? formatNaira(member.monthlySavingsAmount) : "-"}. Minimum ₦20,000; amounts above ₦70,000 need admin approval.
+          Current: {member ? formatNaira(member.monthlySavingsAmount) : "-"}. Minimum ₦20,000; amounts above ₦100,000 need admin approval.
         </p>
         <div>
           <label className="field-label">New amount</label>

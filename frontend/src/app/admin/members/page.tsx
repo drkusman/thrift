@@ -119,9 +119,12 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
   );
 }
 
+const STATUSES: Member["status"][] = ["ACTIVE", "WITHDRAWN", "RETIRED", "DECEASED", "INACTIVE"];
+
 function AdminMembersContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Member["status"] | "ALL">("ALL");
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
 
@@ -142,14 +145,24 @@ function AdminMembersContent() {
   }
 
   const filtered = members.filter((m) =>
-    m.regno.toLowerCase().includes(query.toLowerCase()) || m.fullName.toLowerCase().includes(query.toLowerCase())
+    (statusFilter === "ALL" || m.status === statusFilter) &&
+    (m.regno.toLowerCase().includes(query.toLowerCase()) || m.fullName.toLowerCase().includes(query.toLowerCase()))
   );
+
+  const exportParams = new URLSearchParams();
+  if (statusFilter !== "ALL") exportParams.set("status", statusFilter);
+  if (query.trim()) exportParams.set("query", query.trim());
+  const exportQuery = exportParams.toString();
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-[var(--maroon-dark)]">Members</h1>
-        <RegisterForm onRegistered={() => load()} />
+        <div className="flex gap-2 flex-wrap">
+          <a href={apiUrl(`/api/admin/members/export.xlsx?${exportQuery}`)} className="btn btn-secondary">Download (Excel)</a>
+          <a href={apiUrl(`/api/admin/members/export.pdf?${exportQuery}`)} className="btn btn-secondary">Download (PDF)</a>
+          <RegisterForm onRegistered={() => load()} />
+        </div>
       </div>
 
       {resetMsg && (
@@ -158,6 +171,25 @@ function AdminMembersContent() {
         </p>
       )}
       {resetError && <p className="alert-error max-w-md">{resetError}</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {(["ALL", ...STATUSES] as const).map((s) => {
+          const count = s === "ALL" ? members.length : members.filter((m) => m.status === s).length;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                statusFilter === s
+                  ? "bg-[var(--maroon-dark)] text-white border-[var(--maroon-dark)]"
+                  : "bg-white text-[var(--muted)] border-[var(--line)] hover:border-[var(--maroon)]"
+              }`}
+            >
+              {s} ({count})
+            </button>
+          );
+        })}
+      </div>
 
       <input
         placeholder="Search by regno or name..."

@@ -14,13 +14,13 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
-/** Monthly savings amount rule, per Karim: any amount >= 20,000 is allowed; amounts > 70,000
+/** Monthly savings amount rule, per Karim: any amount >= 20,000 is allowed; amounts > 100,000
  *  require admin approval before they take effect. Legacy imported amounts outside this range
  *  are left untouched - this rule only governs new/changed amounts going forward. */
 @Service
 public class SavingsService {
     private static final long MIN_AMOUNT = 20_000;
-    private static final long AUTO_APPROVE_CEILING = 70_000;
+    private static final long AUTO_APPROVE_CEILING = 100_000;
 
     private final SavingsAmountChangeRequestRepository requestRepository;
     private final MemberRepository memberRepository;
