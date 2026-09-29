@@ -55,8 +55,11 @@ public class MembershipWithdrawalService {
         this.badDebtService = badDebtService;
     }
 
-    /** A read-only preview of what withdrawing this member right now would look like. canWithdraw is
-     *  false whenever totalLoan is still positive - every loan must be liquidated to zero first. */
+    /** A read-only preview of what withdrawing this member right now would look like. canWithdraw
+     *  normally requires totalLoan to already be zero (liquidated first) - except when their overall
+     *  equity is already negative, since in that case their own savings can't cover the loan anyway
+     *  and insisting on liquidation first is a dead end. That candidate can be withdrawn directly, with
+     *  the unpaid loan folded into what they owe on the Bad Debt list (see withdraw()/BadDebtService). */
     public record Summary(long totalSavings, long totalLoan, long balance, long cot, long withdrawableAmount,
                            boolean canWithdraw) {}
 
@@ -70,7 +73,8 @@ public class MembershipWithdrawalService {
         boolean hasPayout = balance > 0;
         long cot = hasPayout ? cotFor(balance) : 0;
         long withdrawable = hasPayout ? balance - cot : 0;
-        return new Summary(totalSavings, totalLoan, balance, cot, withdrawable, totalLoan <= 0);
+        boolean canWithdraw = totalLoan <= 0 || balance < 0;
+        return new Summary(totalSavings, totalLoan, balance, cot, withdrawable, canWithdraw);
     }
 
     private static long cotFor(long balance) {
@@ -121,8 +125,11 @@ public class MembershipWithdrawalService {
         // A negative balance means they're leaving still owing the cooperative money - tracked here
         // rather than left implicit, so admins can find them again and record repayments later (see
         // BadDebtService and the Bad Debt admin page). Zero is left alone - nothing owed, nothing paid.
+        // Any loan of theirs still RUNNING/PULSED is folded into this same figure and closed out, so the
+        // whole shortfall lives in one place instead of being tracked twice (see writeOffForBadDebt()).
         if (s.balance() < 0) {
-            badDebtService.record(member, audit.getId(), -s.balance());
+            loanService.writeOffForBadDebt(admin, memberId);
+            badDebtService.record(admin, member, audit.getId(), -s.balance());
         }
         return audit;
     }

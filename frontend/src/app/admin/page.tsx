@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -15,7 +16,23 @@ const LIFECYCLE_COLORS: Record<string, string> = {
   Running: "#6b1f2e",
   Pulsed: "#a6455f",
   Completed: "#0b7a3b",
+  "Bad Loans": "#8f1a20",
 };
+
+// "Running" is itself an aggregate of three underlying loan statuses (see
+// AdminAnalyticsService.loanLifecycleBreakdown()) - the other stages map one-to-one.
+const LIFECYCLE_STATUS_QUERY: Record<string, string> = {
+  Pending: "PENDING",
+  Running: "APPROVED,DISBURSED,RUNNING",
+  Pulsed: "PULSED",
+  Completed: "COMPLETED",
+  "Bad Loans": "BAD_DEBT",
+};
+
+function lifecycleListHref(stage: string) {
+  const status = LIFECYCLE_STATUS_QUERY[stage] ?? stage;
+  return `/admin/loans/list?status=${status}&label=${encodeURIComponent(stage)}`;
+}
 
 function darken(hex: string, amount = 0.32) {
   const clean = hex.replace("#", "");
@@ -96,9 +113,11 @@ function LoansGrantedPieChart({ breakdown }: { breakdown: FiscalYearBreakdown | 
 /** A classic tilted "3D" pie: two stacked ellipses (a darkened one offset down as the drum wall, a
  *  normal one on top as the face) fake the extrusion recharts doesn't support natively. */
 function LoanLifecyclePieChart3D({ breakdown }: { breakdown: FiscalYearBreakdown | null }) {
+  const router = useRouter();
   const slices = breakdown?.slices ?? [];
   const total = slices.reduce((sum, s) => sum + s.amount, 0);
   const colorFor = (stage: string) => LIFECYCLE_COLORS[stage] ?? "#999";
+  const goToStage = (stage: string) => router.push(lifecycleListHref(stage));
 
   return (
     <div className="card p-5 max-w-2xl">
@@ -125,7 +144,8 @@ function LoanLifecyclePieChart3D({ breakdown }: { breakdown: FiscalYearBreakdown
             <div className="absolute inset-0" style={{ transform: "scaleY(0.82)", transformOrigin: "center" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={slices} dataKey="amount" nameKey="type" outerRadius={85} paddingAngle={1}>
+                  <Pie data={slices} dataKey="amount" nameKey="type" outerRadius={85} paddingAngle={1}
+                    onClick={(s) => goToStage(String(s.name))} cursor="pointer">
                     {slices.map((s) => (
                       <Cell key={s.type} fill={colorFor(s.type)} stroke="#fff" strokeWidth={1.5} />
                     ))}
@@ -138,10 +158,14 @@ function LoanLifecyclePieChart3D({ breakdown }: { breakdown: FiscalYearBreakdown
           </div>
           <div className="flex justify-center gap-5 mt-3">
             {slices.map((s) => (
-              <span key={s.type} className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+              <Link
+                key={s.type}
+                href={lifecycleListHref(s.type)}
+                className="flex items-center gap-1.5 text-xs text-[var(--muted)] hover:text-[var(--maroon-dark)] hover:underline"
+              >
                 <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: colorFor(s.type) }} />
                 {s.type} ({s.amount})
-              </span>
+              </Link>
             ))}
           </div>
         </>
@@ -226,6 +250,12 @@ function AdminOverviewContent() {
               {summary ? formatNaira(summary.totalEquity) : "..."}
             </p>
           </div>
+          <Link href="/admin/bad-debt" className="stat-tile block hover:shadow-[var(--shadow-lg)] transition-shadow">
+            <p className="stat-label">Total bad debt</p>
+            <p className={`stat-value !text-xl ${summary && summary.totalBadDebt > 0 ? "!text-rose-700" : ""}`}>
+              {summary ? formatNaira(summary.totalBadDebt) : "..."}
+            </p>
+          </Link>
         </div>
       </div>
 

@@ -57,7 +57,7 @@ export type Loan = {
   totalRepayable: number | null;
   monthlyRepaymentAmount: number | null;
   balance: number | null;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "PULSED" | "COMPLETED" | "DEFAULTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED" | "RUNNING" | "PULSED" | "COMPLETED" | "DEFAULTED" | "BAD_DEBT";
   appliedAt: string | null;
   decisionNote: string | null;
   guarantorOneId: number | null;
@@ -181,6 +181,7 @@ export type AdminSummary = {
   totalSavings: number;
   totalLoanBalance: number;
   totalEquity: number;
+  totalBadDebt: number;
 };
 
 export type MonthPoint = { month: string; amount: number };

@@ -9,6 +9,7 @@ import java.util.List;
 public interface LoanRepository extends JpaRepository<Loan, Long> {
     List<Loan> findByMemberIdOrderByAppliedAtDesc(Long memberId);
     List<Loan> findByStatusOrderByAppliedAtAsc(LoanStatus status);
+    List<Loan> findByStatusInOrderByAppliedAtAsc(List<LoanStatus> statuses);
     List<Loan> findByStatusInOrderByAppliedAtDesc(List<LoanStatus> statuses);
     List<Loan> findByMemberIdAndStatusOrderByDisbursedAtAsc(Long memberId, LoanStatus status);
 }

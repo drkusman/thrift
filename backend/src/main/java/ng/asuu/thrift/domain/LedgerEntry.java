@@ -28,7 +28,7 @@ public class LedgerEntry {
     @Column(name = "created_at", nullable = false) private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
     @Column(name = "created_by") private Long createdBy;
 
-    public enum TransCat { SAVINGS, LOAN, INTEREST, FEES, OTHER }
+    public enum TransCat { SAVINGS, LOAN, INTEREST, FEES, OTHER, BAD_DEBT }
     public enum DrCr { DR, CR }
     public enum LedgerSource { LEGACY_IMPORT, MONTHLY_UPLOAD, LOAN_DISBURSEMENT, LOAN_REPAYMENT, LOAN_APPLICATION, MANUAL_ADMIN }
 }

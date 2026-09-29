@@ -23,7 +23,7 @@ public class AdminAnalyticsService {
     }
 
     public record Summary(long totalMonthlySavings, long totalLoanPayments, long totalMonthlyDeductions,
-                           long totalSavings, long totalLoanBalance, long totalEquity) {}
+                           long totalSavings, long totalLoanBalance, long totalEquity, long totalBadDebt) {}
 
     public record MonthPoint(String month, long amount) {}
 
@@ -46,8 +46,11 @@ public class AdminAnalyticsService {
         long totalLoanBalance = queryLong(
                 "SELECT COALESCE(SUM(CASE WHEN dr_cr_status = 'DR' THEN amount ELSE -amount END), 0) " +
                 "FROM ledger_entries WHERE trans_cat = 'LOAN'");
+        long totalBadDebt = queryLong(
+                "SELECT COALESCE(SUM(CASE WHEN dr_cr_status = 'DR' THEN amount ELSE -amount END), 0) " +
+                "FROM ledger_entries WHERE trans_cat = 'BAD_DEBT'");
         return new Summary(totalMonthlySavings, totalLoanPayments, totalMonthlySavings + totalLoanPayments,
-                totalSavings, totalLoanBalance, totalSavings - totalLoanBalance);
+                totalSavings, totalLoanBalance, totalSavings - totalLoanBalance, totalBadDebt);
     }
 
     /** Net savings collected (CR minus DR) per month of the thrift's current fiscal year, which runs
@@ -123,11 +126,15 @@ public class AdminAnalyticsService {
 
     /** Current lifecycle distribution across every loan the thrift has ever granted - Pending (awaiting
      *  a decision), Running (approved/disbursed/being repaid), Pulsed (a genuine legacy status, see
-     *  LoanStatus), Completed (fully repaid). Rejected/defaulted loans are excluded - they never became
-     *  a real ongoing loan. Deliberately NOT fiscal-year scoped, unlike the other analytics charts:
-     *  lifecycle status is a present-moment fact about a loan regardless of when it was originally
-     *  granted, and most historical loans (reconstructed by LegacyImportService.importHistoricalLoans)
-     *  predate the current fiscal year, so scoping this by applied_at would hide almost all of them. */
+     *  LoanStatus), Completed (fully repaid), Bad Loans (written off when the member withdrew still
+     *  owing - see LoanService.writeOffForBadDebt(); labeled "Bad Loans" here since this chart is about
+     *  the loan's own lifecycle stage, distinct from the member-level "Bad Debt" figure tracked
+     *  elsewhere - see BadDebtService/the Bad Debt admin page). Rejected/defaulted loans are excluded - they never
+     *  became a real ongoing loan. Deliberately NOT fiscal-year scoped, unlike the other analytics
+     *  charts: lifecycle status is a present-moment fact about a loan regardless of when it was
+     *  originally granted, and most historical loans (reconstructed by
+     *  LegacyImportService.importHistoricalLoans) predate the current fiscal year, so scoping this by
+     *  applied_at would hide almost all of them. */
     public FiscalYearBreakdown loanLifecycleBreakdown() {
         List<TypeAmount> rows = jdbc.query(
                 "SELECT CASE " +
@@ -135,6 +142,7 @@ public class AdminAnalyticsService {
                 "         WHEN status IN ('APPROVED', 'DISBURSED', 'RUNNING') THEN 'Running' " +
                 "         WHEN status = 'PULSED' THEN 'Pulsed' " +
                 "         WHEN status = 'COMPLETED' THEN 'Completed' " +
+                "         WHEN status = 'BAD_DEBT' THEN 'Bad Loans' " +
                 "       END AS stage, COUNT(*) AS amount " +
                 "FROM loans WHERE status NOT IN ('REJECTED', 'DEFAULTED') " +
                 "GROUP BY 1",
@@ -142,7 +150,7 @@ public class AdminAnalyticsService {
 
         // Fixed order regardless of what SQL returned, zero-filling gaps.
         Map<String, Long> byStage = rows.stream().collect(Collectors.toMap(TypeAmount::type, TypeAmount::amount));
-        List<TypeAmount> slices = List.of("Pending", "Running", "Pulsed", "Completed").stream()
+        List<TypeAmount> slices = List.of("Pending", "Running", "Pulsed", "Completed", "Bad Loans").stream()
                 .map(stage -> new TypeAmount(stage, byStage.getOrDefault(stage, 0L)))
                 .collect(Collectors.toList());
         return new FiscalYearBreakdown("all-time", slices);

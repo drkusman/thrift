@@ -216,7 +216,7 @@ function AdminWithdrawalModuleContent() {
               {!summary.canWithdraw && (
                 <p className="p-3 text-xs text-[var(--muted)]">Every loan must be liquidated to zero before this member can be withdrawn.</p>
               )}
-              {summary.canWithdraw && summary.balance < 0 && (
+              {summary.balance < 0 && (
                 <p className="p-3 text-xs alert-error !mt-0">
                   Negative balance - withdrawing now pays out nothing and adds this member to the Bad Debt
                   list for {formatNaira(-summary.balance)}.

@@ -114,9 +114,12 @@ public class AdminLoanController {
         return memberService.findAll().stream().collect(Collectors.toMap(Member::getId, Function.identity()));
     }
 
+    /** Takes one or more statuses (?status=RUNNING or ?status=RUNNING,APPROVED,DISBURSED) - the latter is
+     *  how the Overview page's "Running" lifecycle bucket (an aggregate of those three, see
+     *  AdminAnalyticsService.loanLifecycleBreakdown()) links through to a concrete list here. */
     @GetMapping("/by-status")
-    public List<LoanDto> byStatus(@RequestParam LoanStatus status) {
-        return loanService.byStatus(status).stream()
+    public List<LoanDto> byStatus(@RequestParam List<LoanStatus> status) {
+        return loanService.byStatuses(status).stream()
                 .map(l -> LoanDto.of(l, loanService.balanceFor(l.getId())))
                 .toList();
     }

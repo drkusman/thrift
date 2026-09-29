@@ -7,10 +7,12 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-/** A member who withdrew from the cooperative with a negative savings balance - originalAmount is a
- *  snapshot of what they owed at withdrawal time (for record-keeping only); the actual amount still owed
- *  is always read live from their ledger (see BadDebtService), since repayments post as ordinary ledger
- *  entries rather than being tracked as a separate running total here. */
+/** A member who withdrew from the cooperative with a negative overall equity - originalAmount is a
+ *  snapshot of what they owed at withdrawal time (for record-keeping only). The actual amount still owed
+ *  is read live from the ledger (see BadDebtService.owedNow()): the DR entry posted here at creation and
+ *  every CR repayment since both live under TransCat.BAD_DEBT, the same pattern SAVINGS and LOAN use for
+ *  their own running balances - so this debt shows up in the member's own transaction history and is
+ *  auditable the same way everything else in the ledger is, rather than being a bare counter. */
 @Entity @Table(name = "bad_debts") @Getter @Setter
 public class BadDebt {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;

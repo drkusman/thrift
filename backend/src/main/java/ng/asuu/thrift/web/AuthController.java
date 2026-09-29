@@ -3,13 +3,17 @@ package ng.asuu.thrift.web;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import ng.asuu.thrift.domain.Member;
 import ng.asuu.thrift.security.MemberPrincipal;
 import ng.asuu.thrift.service.MemberService;
 import ng.asuu.thrift.web.dto.LoginRequest;
 import ng.asuu.thrift.web.dto.MemberView;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -17,6 +21,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -53,8 +58,13 @@ public class AuthController {
         try {
             auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(req.regno(), req.password()));
-        } catch (BadCredentialsException | org.springframework.security.authentication.LockedException e) {
+        } catch (BadCredentialsException e) {
             return ResponseEntity.status(401).build();
+        } catch (LockedException | DisabledException e) {
+            // The regno/password matched, but MemberPrincipal.isAccountNonLocked()/isEnabled() rejected
+            // it because the account isn't ACTIVE - tell the person why instead of the generic
+            // "incorrect regno or password", which would be misleading here (their credentials are fine).
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, reasonForBlockedLogin(req.regno()));
         }
 
         SecurityContext context = SecurityContextHolder.createEmptyContext();
@@ -67,6 +77,17 @@ public class AuthController {
         var previousLastSeen = principal.getMember().getLastSeenAt();
         memberService.touchLastSeen(principal.getMember());
         return ResponseEntity.ok(MemberView.of(principal.getMember(), previousLastSeen));
+    }
+
+    private String reasonForBlockedLogin(String regno) {
+        Member member = memberService.requireByRegno(regno);
+        return switch (member.getStatus()) {
+            case WITHDRAWN -> "This account has been withdrawn from the cooperative and can no longer sign in.";
+            case DECEASED -> "This account has been closed.";
+            case RETIRED -> "This account has been closed following retirement.";
+            case INACTIVE -> "This account is currently inactive - contact the administrator.";
+            case ACTIVE -> "This account cannot sign in right now - contact the administrator.";
+        };
     }
 
     @GetMapping("/me")

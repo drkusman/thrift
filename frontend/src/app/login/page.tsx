@@ -31,6 +31,7 @@ export default function LoginPage() {
         else router.push("/dashboard");
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) setError("Incorrect regno or password.");
+        else if (e instanceof ApiError && e.status === 403) setError(e.message);
         else setError("Something went wrong. Please try again.");
       } finally {
         setSubmitting(false);

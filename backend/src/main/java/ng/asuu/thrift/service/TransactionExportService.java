@@ -30,9 +30,11 @@ import java.util.List;
 /**
  * A member's statement is split into a Savings side and a Loan side, matching how they'd naturally
  * think of their account: a member's own contributions/interest/fees on one side, their loan
- * disbursements/repayments on the other. Only LOAN-category entries go to the loan side; SAVINGS,
- * INTEREST, FEES, and OTHER all fall under savings (see LedgerService/LoanService, which likewise
- * only ever post LOAN entries against a member's outstanding loan balance).
+ * disbursements/repayments on the other. LOAN and BAD_DEBT entries both go to the loan side - a bad
+ * debt is what a written-off loan becomes (see LoanService.writeOffForBadDebt()/BadDebtService), so it
+ * reads naturally as a continuation of the same statement: the write-off brings the loan to zero, then
+ * the bad debt debit appears as the next line for the same amount, and repayments count it back down
+ * from there. SAVINGS, INTEREST, FEES, and OTHER all fall under savings.
  */
 @Service
 public class TransactionExportService {
@@ -51,8 +53,8 @@ public class TransactionExportService {
     }
 
     public byte[] toExcel(Member member, List<LedgerEntry> entries) throws IOException {
-        List<LedgerEntry> savings = sortedAscending(entries.stream().filter(e -> e.getTransCat() != TransCat.LOAN).toList());
-        List<LedgerEntry> loans = sortedAscending(entries.stream().filter(e -> e.getTransCat() == TransCat.LOAN).toList());
+        List<LedgerEntry> savings = sortedAscending(entries.stream().filter(TransactionExportService::isSavingsSide).toList());
+        List<LedgerEntry> loans = sortedAscending(entries.stream().filter(TransactionExportService::isLoanSide).toList());
 
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             int pictureIdx = wb.addPicture(logoBytes, Workbook.PICTURE_TYPE_JPEG);
@@ -196,8 +198,8 @@ public class TransactionExportService {
     }
 
     public byte[] toPdf(Member member, List<LedgerEntry> entries) throws IOException {
-        List<LedgerEntry> savings = sortedAscending(entries.stream().filter(e -> e.getTransCat() != TransCat.LOAN).toList());
-        List<LedgerEntry> loans = sortedAscending(entries.stream().filter(e -> e.getTransCat() == TransCat.LOAN).toList());
+        List<LedgerEntry> savings = sortedAscending(entries.stream().filter(TransactionExportService::isSavingsSide).toList());
+        List<LedgerEntry> loans = sortedAscending(entries.stream().filter(TransactionExportService::isLoanSide).toList());
 
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDImageXObject logo = PDImageXObject.createFromByteArray(doc, logoBytes, "logo");
@@ -381,6 +383,14 @@ public class TransactionExportService {
             if (!anySection) newPage();
             cs.close();
         }
+    }
+
+    private static boolean isLoanSide(LedgerEntry e) {
+        return e.getTransCat() == TransCat.LOAN || e.getTransCat() == TransCat.BAD_DEBT;
+    }
+
+    private static boolean isSavingsSide(LedgerEntry e) {
+        return !isLoanSide(e);
     }
 
     private static List<LedgerEntry> sortedAscending(List<LedgerEntry> entries) {

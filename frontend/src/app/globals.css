@@ -98,8 +98,8 @@ body {
   .btn-secondary { background: var(--card); color: var(--ink); border-color: var(--input-border); }
   .btn-secondary:hover:not(:disabled) { background: var(--maroon-light); border-color: var(--maroon); }
 
-  .btn-danger { background: var(--card); color: #a3161d; border-color: #f0c9cc; }
-  .btn-danger:hover:not(:disabled) { background: rgba(163, 22, 29, .12); }
+  .btn-danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+  .btn-danger:hover:not(:disabled) { background: #991b1b; border-color: #991b1b; }
 
   .field-label { font-weight: 600; font-size: .82rem; color: var(--ink); margin-bottom: .3rem; display: block; }
 

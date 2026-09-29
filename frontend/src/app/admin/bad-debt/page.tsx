@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
-import { api, ApiError } from "@/lib/api";
+import { api, apiUrl, ApiError } from "@/lib/api";
 import { BadDebtRow } from "@/lib/types";
 import { formatNaira } from "@/lib/ui";
 import { useSubmitGuard } from "@/lib/use-submit-guard";
@@ -74,7 +74,13 @@ function AdminBadDebtContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-[var(--maroon-dark)]">Bad debt list</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-[var(--maroon-dark)]">Bad debt list</h1>
+        <div className="flex gap-2">
+          <a href={apiUrl("/api/admin/bad-debts/export.xlsx")} className="btn btn-secondary">Download (Excel)</a>
+          <a href={apiUrl("/api/admin/bad-debts/export.pdf")} className="btn btn-secondary">Download (PDF)</a>
+        </div>
+      </div>
       <p className="text-sm text-[var(--muted)] max-w-2xl">
         Members who withdrew from the cooperative while owing more than they had saved. Even though their
         account is closed, they can still pay this back gradually - record a repayment as it comes in, and

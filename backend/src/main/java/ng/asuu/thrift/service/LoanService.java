@@ -68,6 +68,13 @@ public class LoanService {
         return loanRepository.findByStatusOrderByAppliedAtAsc(status);
     }
 
+    /** Same as byStatus() but across several statuses at once - used for the admin Loan List page's
+     *  member-history lookup being reachable from the Overview page's "Running" lifecycle bucket, which
+     *  is itself an aggregate of APPROVED/DISBURSED/RUNNING (see AdminAnalyticsService.loanLifecycleBreakdown()). */
+    public List<Loan> byStatuses(List<LoanStatus> statuses) {
+        return loanRepository.findByStatusInOrderByAppliedAtAsc(statuses);
+    }
+
     public List<LoanRepaymentSchedule> scheduleFor(Long loanId) {
         return scheduleRepository.findByLoanIdOrderByInstallmentNoAsc(loanId);
     }
@@ -397,5 +404,28 @@ public class LoanService {
             balance += e.getDrCrStatus() == DrCr.DR ? e.getAmount() : -e.getAmount();
         }
         return balance;
+    }
+
+    /** Called from MembershipWithdrawalService.withdraw() the moment a member's negative equity turns
+     *  into a bad debt record: every loan of theirs still RUNNING or PULSED is written off (a CR posting
+     *  for its full remaining balance, same as any other repayment ledger-wise, zeroing its own balance)
+     *  and marked BAD_DEBT rather than COMPLETED - distinct from an ordinary paid-off loan, since this one
+     *  wasn't actually repaid, it was folded into the member's bad debt ledger instead (see
+     *  BadDebtService and TransCat.BAD_DEBT) - so nothing is left outstanding on the loan side to
+     *  double-count or to keep expecting monthly repayments against. */
+    @Transactional
+    public void writeOffForBadDebt(Member admin, Long memberId) {
+        LocalDate today = LocalDate.now();
+        for (Loan loan : loanRepository.findByMemberIdOrderByAppliedAtDesc(memberId)) {
+            if (loan.getStatus() != LoanStatus.RUNNING && loan.getStatus() != LoanStatus.PULSED) continue;
+            long balance = balanceFor(loan.getId());
+            if (balance > 0) {
+                ledgerService.post(memberId, balance, today,
+                        "Loan closed - folded into bad debt (" + (loan.getLoanCode() != null ? loan.getLoanCode() : loan.getId()) + ")",
+                        "BDCL", TransCat.LOAN, DrCr.CR, loan.getId(), LedgerSource.MANUAL_ADMIN, admin.getId());
+            }
+            loan.setStatus(LoanStatus.BAD_DEBT);
+            loanRepository.save(loan);
+        }
     }
 }

@@ -24,6 +24,7 @@ export function statusBadgeClass(status: string) {
     case "DEFAULTED":
     case "WITHDRAWN":
     case "DECEASED":
+    case "BAD_DEBT":
       return "badge badge-red";
     case "PENDING":
       return "badge badge-gold";
