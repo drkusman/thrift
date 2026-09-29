@@ -59,6 +59,12 @@ function PendingRequestRow({ req, member, onDecided }: {
           {!summary.canWithdraw && (
             <p className="text-[var(--danger,#b91c1c)] font-semibold">Still has running loans - liquidate them first via the Withdrawal Module.</p>
           )}
+          {summary.canWithdraw && summary.balance < 0 && (
+            <p className="alert-error !mt-2">
+              Negative balance ({formatNaira(summary.balance)}) - nothing will be paid out, and approving this
+              will add them to the Bad Debt list for {formatNaira(-summary.balance)}.
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -248,6 +248,14 @@ function SettingsContent() {
             {!withdrawalSummary.canWithdraw && (
               <p className="text-xs text-[var(--muted)]">You still have running loans - these must be liquidated before withdrawal can be finalized.</p>
             )}
+            {withdrawalSummary.canWithdraw && withdrawalSummary.balance < 0 && (
+              <p className="alert-error">
+                Your balance is negative ({formatNaira(withdrawalSummary.balance)}) - nothing will be paid out,
+                and withdrawing now will place you on the cooperative&rsquo;s bad debt list for{" "}
+                {formatNaira(-withdrawalSummary.balance)} until it&rsquo;s repaid. You can still request to
+                withdraw if you understand this.
+              </p>
+            )}
           </div>
         )}
 

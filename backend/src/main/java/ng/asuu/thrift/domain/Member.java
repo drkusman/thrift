@@ -30,8 +30,11 @@ public class Member {
     @Column(name = "created_at", nullable = false) private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
     @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     @Column(name = "last_seen_at") private LocalDateTime lastSeenAt;
+    /** Set automatically when a membership withdrawal is finalized with a negative balance (they owe
+     *  more than they have) - see MembershipWithdrawalService.withdraw(). Never cleared automatically. */
+    @Column(name = "bad_debt", nullable = false) private boolean badDebt = false;
 
     public boolean isActive() { return status == MemberStatus.ACTIVE; }
     public boolean isAdmin() { return role == MemberRole.ADMIN; }
-    public boolean isStaff() { return role == MemberRole.ADMIN || role == MemberRole.FIN_SEC; }
+    public boolean isStaff() { return role == MemberRole.ADMIN || role == MemberRole.FIN_SEC || role == MemberRole.PRESIDENT; }
 }

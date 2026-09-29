@@ -12,7 +12,7 @@ export default function HomePage() {
     if (loading) return;
     if (!member) { router.push("/login"); return; }
     if (member.mustChangePassword) { router.push("/change-password"); return; }
-    if (member.role === "ADMIN" || member.role === "FIN_SEC") router.push("/admin");
+    if (member.role === "ADMIN" || member.role === "FIN_SEC" || member.role === "PRESIDENT") router.push("/admin");
     else router.push("/dashboard");
   }, [loading, member, router]);
 

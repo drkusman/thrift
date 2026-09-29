@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireAuth } from "@/components/RequireAuth";
 import { BankSearchSelect } from "@/components/BankSearchSelect";
+import { useAuth } from "@/lib/auth-context";
 import { api, apiUrl, ApiError } from "@/lib/api";
 import { Bank, Member } from "@/lib/types";
 import { formatNaira, statusBadgeClass } from "@/lib/ui";
@@ -122,11 +123,16 @@ function RegisterForm({ onRegistered }: { onRegistered: (m: Member) => void }) {
 const STATUSES: Member["status"][] = ["ACTIVE", "WITHDRAWN", "RETIRED", "DECEASED", "INACTIVE"];
 
 function AdminMembersContent() {
+  const { member: currentMember } = useAuth();
+  const isAdmin = currentMember?.role === "ADMIN";
   const [members, setMembers] = useState<Member[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Member["status"] | "ALL">("ALL");
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [roleMsg, setRoleMsg] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [swappingId, setSwappingId] = useState<number | null>(null);
 
   function load() {
     api.get<Member[]>("/api/admin/members").then(setMembers);
@@ -141,6 +147,20 @@ function AdminMembersContent() {
       setResetMsg(`Password for ${regno} has been reset to their reg. number (${regno}). They'll be asked to set a new one on their next sign-in.`);
     } catch (e) {
       setResetError(e instanceof ApiError ? e.message : `Could not reset the password for ${regno}. Please try again.`);
+    }
+  }
+
+  async function swapRole(id: number, regno: string, newRole: "FIN_SEC" | "PRESIDENT") {
+    setRoleError(null); setRoleMsg(null);
+    setSwappingId(id);
+    try {
+      const updated = await api.post<Member>(`/api/admin/members/${id}/role`, { role: newRole });
+      setMembers((prev) => prev.map((m) => (m.id === id ? updated : m)));
+      setRoleMsg(`${regno} is now ${newRole === "FIN_SEC" ? "Fin. Sec." : "President"}.`);
+    } catch (e) {
+      setRoleError(e instanceof ApiError ? e.message : `Could not change the role for ${regno}. Please try again.`);
+    } finally {
+      setSwappingId(null);
     }
   }
 
@@ -171,6 +191,8 @@ function AdminMembersContent() {
         </p>
       )}
       {resetError && <p className="alert-error max-w-md">{resetError}</p>}
+      {roleMsg && <p className="alert-success max-w-md">{roleMsg}</p>}
+      {roleError && <p className="alert-error max-w-md">{roleError}</p>}
 
       <div className="flex flex-wrap gap-2">
         {(["ALL", ...STATUSES] as const).map((s) => {
@@ -215,7 +237,10 @@ function AdminMembersContent() {
               <tr key={m.id}>
                 <td className="font-semibold">{m.regno}</td>
                 <td>{m.fullName}</td>
-                <td><span className={statusBadgeClass(m.status)}>{m.status}</span></td>
+                <td>
+                  <span className={statusBadgeClass(m.status)}>{m.status}</span>
+                  {m.badDebt && <span className="badge badge-red ml-1">BAD DEBT</span>}
+                </td>
                 <td><span className="badge badge-grey">{m.role}</span></td>
                 <td className="text-right">{formatNaira(m.monthlySavingsAmount)}</td>
                 <td className="text-right whitespace-nowrap">
@@ -223,6 +248,16 @@ function AdminMembersContent() {
                   <a href={apiUrl(`/api/admin/members/${m.id}/transactions/export.pdf`)} className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3">PDF</a>
                   {m.status === "ACTIVE" && (
                     <Link href={`/admin/members/withdrawal?memberId=${m.id}`} className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3">Withdrawal</Link>
+                  )}
+                  {isAdmin && (m.role === "FIN_SEC" || m.role === "PRESIDENT") && (
+                    <button
+                      onClick={() => swapRole(m.id, m.regno, m.role === "FIN_SEC" ? "PRESIDENT" : "FIN_SEC")}
+                      disabled={swappingId === m.id}
+                      title={`Swap to ${m.role === "FIN_SEC" ? "President" : "Fin. Sec."}`}
+                      className="text-[var(--maroon)] hover:underline text-xs font-medium mr-3 disabled:opacity-50"
+                    >
+                      {swappingId === m.id ? "Swapping..." : `Swap to ${m.role === "FIN_SEC" ? "President" : "Fin. Sec."}`}
+                    </button>
                   )}
                   <button onClick={() => resetPassword(m.id, m.regno)} className="text-[var(--muted)] hover:underline text-xs font-medium">Reset password</button>
                 </td>

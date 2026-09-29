@@ -61,14 +61,14 @@ public class SecurityConfig {
             .authorizeHttpRequests(a -> a
                 .requestMatchers("/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-token-valid",
                         "/api/auth/reset-password", "/actuator/health").permitAll()
-                // FIN_SEC has every other admin capability but must not touch the one-time legacy
-                // data import, change roles (which would let it just promote itself to ADMIN), or
-                // pull a full database dump - these matchers must stay ahead of the general
-                // /api/admin/** rule below.
+                // FIN_SEC and PRESIDENT have every other admin capability but must not touch the
+                // one-time legacy data import, change roles (which would let either just promote
+                // itself to ADMIN), or pull a full database dump - these matchers must stay ahead
+                // of the general /api/admin/** rule below.
                 .requestMatchers("/api/admin/import/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/members/*/role").hasRole("ADMIN")
                 .requestMatchers("/api/admin/backup/**").hasRole("ADMIN")
-                .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "FIN_SEC")
+                .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "FIN_SEC", "PRESIDENT")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) -> res.sendError(HttpStatus.UNAUTHORIZED.value()))

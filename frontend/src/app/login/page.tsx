@@ -27,7 +27,7 @@ export default function LoginPage() {
       try {
         const member = await login(regno.trim(), password);
         if (member.mustChangePassword) router.push("/change-password");
-        else if (member.role === "ADMIN" || member.role === "FIN_SEC") router.push("/admin");
+        else if (member.role === "ADMIN" || member.role === "FIN_SEC" || member.role === "PRESIDENT") router.push("/admin");
         else router.push("/dashboard");
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) setError("Incorrect regno or password.");

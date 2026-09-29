@@ -199,6 +199,8 @@ function AdminWithdrawalModuleContent() {
                           <span className="text-xs text-[var(--muted)]">
                             {summary.balance > 0
                               ? `Pay out ${formatNaira(summary.withdrawableAmount)} and close this account?`
+                              : summary.balance < 0
+                              ? `This member owes ${formatNaira(-summary.balance)} - closing this account will add them to the Bad Debt list for that amount. Continue?`
                               : "This member has no savings balance to pay out - just close their account?"}
                           </span>
                           <button onClick={onWithdraw} disabled={withdrawing} className="btn btn-danger text-xs">
@@ -213,6 +215,12 @@ function AdminWithdrawalModuleContent() {
               </table>
               {!summary.canWithdraw && (
                 <p className="p-3 text-xs text-[var(--muted)]">Every loan must be liquidated to zero before this member can be withdrawn.</p>
+              )}
+              {summary.canWithdraw && summary.balance < 0 && (
+                <p className="p-3 text-xs alert-error !mt-0">
+                  Negative balance - withdrawing now pays out nothing and adds this member to the Bad Debt
+                  list for {formatNaira(-summary.balance)}.
+                </p>
               )}
             </div>
           )}

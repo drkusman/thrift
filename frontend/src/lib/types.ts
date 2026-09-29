@@ -14,12 +14,23 @@ export type Member = {
   accountNo: string | null;
   status: "ACTIVE" | "WITHDRAWN" | "RETIRED" | "DECEASED" | "INACTIVE";
   monthlySavingsAmount: number;
-  role: "MEMBER" | "FIN_SEC" | "ADMIN";
+  role: "MEMBER" | "FIN_SEC" | "PRESIDENT" | "ADMIN";
   mustChangePassword: boolean;
   lastSeenAt: string | null;
+  badDebt: boolean;
 };
 
 export type Bank = { id: number; bankCode: string; name: string; sortCode: string | null };
+
+export type BadDebtRow = {
+  badDebtId: number;
+  memberId: number;
+  regno: string;
+  fullName: string;
+  originalAmount: number;
+  currentlyOwed: number;
+  createdAt: string;
+};
 
 export type LoanType = {
   id: number;

@@ -41,15 +41,18 @@ public class MembershipWithdrawalService {
     private final LoanService loanService;
     private final MembershipWithdrawalRepository withdrawalRepository;
     private final MembershipWithdrawalRequestRepository requestRepository;
+    private final BadDebtService badDebtService;
 
     public MembershipWithdrawalService(MemberRepository memberRepository, LedgerService ledgerService,
                                         LoanService loanService, MembershipWithdrawalRepository withdrawalRepository,
-                                        MembershipWithdrawalRequestRepository requestRepository) {
+                                        MembershipWithdrawalRequestRepository requestRepository,
+                                        BadDebtService badDebtService) {
         this.memberRepository = memberRepository;
         this.ledgerService = ledgerService;
         this.loanService = loanService;
         this.withdrawalRepository = withdrawalRepository;
         this.requestRepository = requestRepository;
+        this.badDebtService = badDebtService;
     }
 
     /** A read-only preview of what withdrawing this member right now would look like. canWithdraw is
@@ -61,8 +64,12 @@ public class MembershipWithdrawalService {
         long totalSavings = ledgerService.savingsBalance(memberId);
         long totalLoan = loanService.outstandingBalance(memberId);
         long balance = totalSavings - totalLoan;
-        long cot = cotFor(balance);
-        long withdrawable = balance - cot;
+        // Mirrors withdraw()'s own hasPayout rule below - a zero-or-negative balance means nothing will
+        // actually be paid out and no COT will actually be charged, so the preview shouldn't show a
+        // confusing small negative COT/withdrawable figure for a balance*5/1000 that never gets posted.
+        boolean hasPayout = balance > 0;
+        long cot = hasPayout ? cotFor(balance) : 0;
+        long withdrawable = hasPayout ? balance - cot : 0;
         return new Summary(totalSavings, totalLoan, balance, cot, withdrawable, totalLoan <= 0);
     }
 
@@ -109,7 +116,15 @@ public class MembershipWithdrawalService {
         audit.setCotLedgerEntryId(cotEntryId);
         audit.setPayoutLedgerEntryId(payoutEntryId);
         audit.setPerformedBy(admin.getId());
-        return withdrawalRepository.save(audit);
+        audit = withdrawalRepository.save(audit);
+
+        // A negative balance means they're leaving still owing the cooperative money - tracked here
+        // rather than left implicit, so admins can find them again and record repayments later (see
+        // BadDebtService and the Bad Debt admin page). Zero is left alone - nothing owed, nothing paid.
+        if (s.balance() < 0) {
+            badDebtService.record(member, audit.getId(), -s.balance());
+        }
+        return audit;
     }
 
     public List<MembershipWithdrawalRequest> pendingRequests() {

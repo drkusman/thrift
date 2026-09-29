@@ -43,7 +43,7 @@ export default function ChangePasswordPage() {
         await refresh();
         setSuccess(true);
         setTimeout(() => {
-          if (member?.role === "ADMIN" || member?.role === "FIN_SEC") router.push("/admin");
+          if (member?.role === "ADMIN" || member?.role === "FIN_SEC" || member?.role === "PRESIDENT") router.push("/admin");
           else router.push("/dashboard");
         }, 1200);
       } catch (e) {

@@ -8,7 +8,7 @@ public record MemberView(
         Long id, String regno, String fullName, String phone, String email, String sex,
         String deptCode, String factCode, String payPoint, Long bankId, String accountNo,
         String status, long monthlySavingsAmount, String role, boolean mustChangePassword,
-        String lastSeenAt
+        String lastSeenAt, boolean badDebt
 ) {
     public static MemberView of(Member m) {
         return of(m, m.getLastSeenAt());
@@ -20,6 +20,6 @@ public record MemberView(
         return new MemberView(m.getId(), m.getRegno(), m.getFullName(), m.getPhone(), m.getEmail(), m.getSex(),
                 m.getDeptCode(), m.getFactCode(), m.getPayPoint(), m.getBankId(), m.getAccountNo(),
                 m.getStatus().name(), m.getMonthlySavingsAmount(), m.getRole().name(), m.isMustChangePassword(),
-                lastSeenAt == null ? null : lastSeenAt.toString());
+                lastSeenAt == null ? null : lastSeenAt.toString(), m.isBadDebt());
     }
 }

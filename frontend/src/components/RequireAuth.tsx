@@ -16,7 +16,7 @@ export function RequireAuth({
 }) {
   const { member, loading } = useAuth();
   const router = useRouter();
-  const isStaff = member?.role === "ADMIN" || member?.role === "FIN_SEC";
+  const isStaff = member?.role === "ADMIN" || member?.role === "FIN_SEC" || member?.role === "PRESIDENT";
   const isAdmin = member?.role === "ADMIN";
   const denied = (staffOnly && !isStaff) || (adminOnly && !isAdmin);
 
